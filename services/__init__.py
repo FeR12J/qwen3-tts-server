@@ -12,7 +12,7 @@ from .config_service import (
 )
 from .tts_service import TTSService
 from .whisper_service import transcribe, unload as whisper_unload
-from .model_manager import ModelManager, ModelInfo
+from .model_manager import ModelManager, ModelInfo, ModelState
 from .voice_manager import VoiceManager
 from .audio_service import AudioService
 from .queue_service import QueueService
@@ -31,6 +31,7 @@ __all__ = [
     "whisper_unload",
     "ModelManager",
     "ModelInfo",
+    "ModelState",
     "VoiceManager",
     "AudioService",
     "QueueService",

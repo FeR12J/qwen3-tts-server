@@ -63,6 +63,11 @@ def create_models_routes(app: FastAPI, ctx):
                 "message": f"Modelo '{info.model_id}' descargado y VRAM liberada",
             }
 
+    @app.get("/model/status")
+    async def model_status():
+        """Estado del modelo activo (states: unloaded, loading, ready, generating, unloading, error)."""
+        return await ctx.models.get_model_status()
+
     @app.get("/models")
     @app.get("/tts/audio/models")
     async def list_models():
