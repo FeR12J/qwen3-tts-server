@@ -1,42 +1,26 @@
 #!/usr/bin/env python3
 """Gestión de claves API del servidor TTS."""
 
-import os
-import json
 import hashlib
 import secrets
 import logging
 from datetime import datetime
 
-from config.settings import BASE_DIR
+from storage.api_key_storage import load_keys_file, save_keys_file
 from services.config_service import get_runtime_config
 
 logger = logging.getLogger("tts")
-
-APIKEYS_FILE = os.path.join(BASE_DIR, "config", "apikeys.json")
 
 _keys = None
 
 
 def _load():
     global _keys
-    _keys = []
-    try:
-        if os.path.exists(APIKEYS_FILE):
-            with open(APIKEYS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                _keys = data
-    except Exception as e:
-        logger.warning(f"No se pudieron cargar las claves API: {e}")
+    _keys = load_keys_file()
 
 
 def _save():
-    try:
-        with open(APIKEYS_FILE, "w", encoding="utf-8") as f:
-            json.dump(_keys, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        logger.warning(f"No se pudieron guardar las claves API: {e}")
+    save_keys_file(_keys)
 
 
 def _hash(key: str) -> str:

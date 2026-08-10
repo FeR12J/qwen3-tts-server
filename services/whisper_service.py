@@ -17,7 +17,7 @@ import torch
 
 from config.settings import CONFIG
 from services.config_service import resolve_device
-from utils.helpers import get_dtype
+from utils.gpu import get_dtype
 
 logger = logging.getLogger("tts")
 
@@ -60,7 +60,7 @@ def _ensure_loaded():
         model_path,
         device_map=device,
         torch_dtype=dtype,
-        low_cpu_mem_usage=True
+        low_cpu_mem_usage=True,
     )
     _model_name = model_name
     logger.info("Whisper cargado correctamente")
@@ -99,7 +99,7 @@ def _decode_with_ffmpeg(audio_bytes: bytes, ffmpeg: str) -> tuple:
         tmp.flush()
         proc = subprocess.run(
             [ffmpeg, "-v", "error", "-i", tmp.name, "-f", "wav", "-ar", "16000", "-ac", "1", "-"],
-            capture_output=True
+            capture_output=True,
         )
     if proc.returncode != 0 or not proc.stdout:
         raise ValueError(proc.stderr.decode(errors="ignore").strip() or "error de ffmpeg")
@@ -156,5 +156,5 @@ def transcribe(audio_bytes: bytes, language: Optional[str] = None) -> dict:
         "language": detected_language,
         "duration_seconds": round(duration, 2),
         "model": _model_name,
-        "device": str(device)
+        "device": str(device),
     }

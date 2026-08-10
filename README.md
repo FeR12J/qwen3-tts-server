@@ -5,31 +5,62 @@ Servidor FastAPI modular para generación de texto a voz con modelos Qwen3-TTS l
 ## Estructura del Proyecto
 
 ```
-qwen-tts-server/
-├── app.py               # Punto de entrada y configuración FastAPI
-├── requirements.txt     # Dependencias
-├── config/              # Configuración
-│   └── settings.py      # Variables de configuración (CONFIG, defaults)
-├── schemas/             # Esquemas Pydantic (renombrado para evitar conflicto con ./models)
-│   └── schemas.py       # TTSRequest, LoadModelRequest, etc.
-├── utils/               # Utilidades
-│   ├── helpers.py       # validate_text, log_request, save_audio, get_dtype, get_vram_available
-│   └── auth.py          # Dependencia require_api_key (X-API-Key / Authorization: Bearer)
-├── services/            # Lógica de negocio
-│   ├── model_service.py # Carga y gestión de modelos
+qwen3-tts-server/
+├── app.py               # Composición de la aplicación y arranque
+├── config/              # Configuración estática y defaults
+│   ├── settings.py      # CONFIG (host, puerto, directorios, modelo/voz por defecto)
+│   └── defaults.py      # Defaults de configuración en tiempo de ejecución
+├── schemas/             # Esquemas Pydantic por dominio
+│   ├── tts.py           # TTSRequest, TTSRequestOpenWebUI
+│   ├── whisper.py       # WhisperStatusResponse
+│   ├── voices.py        # LoadVoiceRequest
+│   ├── models.py        # LoadModelRequest
+│   ├── system.py        # ConfigUpdate, ApiKeyCreate, SystemStatus
+│   └── errors.py        # ErrorResponse
+├── routes/              # Endpoints HTTP (sin lógica de inferencia)
+│   ├── tts.py           # /tts, /tts/play, /tts/audio/speech
+│   ├── models.py        # /model/load, /model/unload, /models
+│   ├── voices.py        # /voice/load, /voice/create, /voice/unload, /voices
+│   ├── system.py        # / (estado del servidor)
+│   ├── whisper.py       # /transcribe, /transcribe/status, /transcribe/unload
+│   ├── auth.py          # Gestión de claves API (/webui/api/apikeys*)
+│   └── webui.py         # Panel web, docs y configuración
+├── services/            # Lógica de negocio e inferencia
+│   ├── model_manager.py # Registro de modelos, carga/descarga, voice clone prompt
+│   ├── voice_manager.py # Voces locales y prompt de clonación activo
 │   ├── tts_service.py   # Generación TTS (despacho por tipo de modelo)
 │   ├── whisper_service.py  # Transcripción con Whisper (transformers)
-│   ├── config_service.py   # Configuración en tiempo de ejecución (runtime.json)
-│   └── apikey_service.py   # Claves API (hash en apikeys.json)
-├── routes/              # Endpoints API
-│   ├── tts_routes.py    # TTS, modelos, voces
-│   ├── whisper_routes.py # Transcripción (Whisper)
-│   └── webui_routes.py  # Panel web, docs, configuración y claves
+│   ├── audio_service.py # Codificación WAV, guardado, limpieza y reproducción local
+│   ├── queue_service.py # Semáforo de inferencia y serialización de reproducciones
+│   ├── metrics_service.py  # Contadores de actividad, logs y VRAM
+│   ├── config_service.py   # Configuración en tiempo de ejecución
+│   └── apikey_service.py   # Claves API (hash)
+├── security/            # Autenticación y validación
+│   ├── auth.py          # Dependencia require_api_key (X-API-Key / Bearer)
+│   ├── permissions.py   # Modelo cargado, soporte de voice cloning
+│   └── validation.py    # validate_text, voice_name, tamaños, config
+├── storage/             # Persistencia en disco
+│   ├── config_storage.py   # data/runtime.json
+│   ├── api_key_storage.py  # data/apikeys.json
+│   └── voice_storage.py    # voces locales (voice.wav + text.txt)
+├── utils/               # Utilidades
+│   ├── paths.py         # Directorios del proyecto
+│   ├── gpu.py           # VRAM, dtype, limpieza CUDA, listado de GPUs
+│   ├── logging.py       # setup_logging, log_request, rotación
+│   └── text.py          # truncate_text
+├── tests/               # Tests (unit/ e integration/)
+│   ├── unit/
+│   └── integration/
 ├── models/              # Modelos locales (Qwen3-TTS + whisper-large-v3)
 ├── voices/              # Voces clonadas locales (cada una con voice.wav + text.txt)
+├── data/                # Datos persistentes (runtime.json, apikeys.json)
 ├── webui/               # Panel web (panel.html, docs.html)
-└── audios/              # Audios generados
+├── audios/              # Audios generados
+├── requirements.txt
+└── requirements-dev.txt
 ```
+
+Flujo de una petición: HTTP → Autenticación (`security/auth.py`) → Validación de esquema (`schemas/`) → Validación de entrada (`security/validation.py`) → Servicio (`services/`) → `ModelManager`/Whisper → `AudioService` → Respuesta. Las rutas HTTP no contienen lógica de inferencia; todo el acceso al modelo pasa por los servicios.
 
 ## Modelos soportados
 
@@ -119,8 +150,15 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 ### config/settings.py
 - `CONFIG`: host (`0.0.0.0`), puerto (`8001`), `default_model`, `whisper_model`, `max_text_chars`, directorios de modelos/voces/audios
 
-### Configuración en tiempo de ejecución (`config/runtime.json`)
+### Configuración en tiempo de ejecución (`data/runtime.json`)
 Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/
+```
 
 ## Ejecución
 
@@ -134,4 +172,4 @@ venv/bin/python app.py
 python3 app.py
 ```
 
-El servidor inicia en `http://0.0.0.0:8001` (host y puerto configurables en `config/settings.py`), carga el modelo por defecto y queda listo. La concurrencia está controlada por un semáforo global definido en `app.py`.
+El servidor inicia en `http://0.0.0.0:8001` (host y puerto configurables en `config/settings.py`), carga el modelo por defecto y queda listo. La concurrencia está controlada por `QueueService` (semáforo global definido en `app.py`).

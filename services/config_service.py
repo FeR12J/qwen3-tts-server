@@ -1,30 +1,14 @@
 #!/usr/bin/env python3
 """Configuración en tiempo de ejecución persistente del servidor TTS."""
 
-import os
-import json
 import logging
 
-from config.settings import BASE_DIR, def_language, def_voice, def_instruct
+from config.defaults import DEFAULTS
+from storage.config_storage import load_runtime_file, save_runtime_file
 
 logger = logging.getLogger("tts")
 
-RUNTIME_FILE = os.path.join(BASE_DIR, "config", "runtime.json")
-
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
-
-DEFAULTS = {
-    "max_text_chars": 1000,
-    "playback_wait_timeout": 300,
-    "def_language": def_language,
-    "def_voice": def_voice,
-    "def_instruct": def_instruct,
-    "log_level": "INFO",
-    "log_requests": True,
-    "api_keys_enabled": False,
-    # Dispositivo de inferencia: "auto" (GPU si hay), "cuda:N" (GPU concreta) o "cpu"
-    "device": "auto",
-}
 
 _runtime = dict(DEFAULTS)
 
@@ -33,25 +17,15 @@ def load_runtime_config():
     """Cargar configuración persistida desde disco (si existe)."""
     global _runtime
     _runtime = dict(DEFAULTS)
-    try:
-        if os.path.exists(RUNTIME_FILE):
-            with open(RUNTIME_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                for key in DEFAULTS:
-                    if key in data and data[key] is not None:
-                        _runtime[key] = data[key]
-    except Exception as e:
-        logger.warning(f"No se pudo cargar la configuración de {RUNTIME_FILE}: {e}")
+    data = load_runtime_file()
+    for key in DEFAULTS:
+        if key in data and data[key] is not None:
+            _runtime[key] = data[key]
 
 
 def save_runtime_config():
     """Persistir la configuración en disco."""
-    try:
-        with open(RUNTIME_FILE, "w", encoding="utf-8") as f:
-            json.dump(_runtime, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        logger.warning(f"No se pudo guardar la configuración de {RUNTIME_FILE}: {e}")
+    save_runtime_file(_runtime)
 
 
 def get_runtime_config() -> dict:

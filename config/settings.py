@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
-"""Configuración del servidor TTS."""
+"""Configuración estática del servidor TTS."""
 
 import os
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from utils.paths import (
+    BASE_DIR,
+    MODELS_DIR,
+    VOICES_DIR,
+    AUDIOS_DIR,
+    CLONE_PROMPTS_DIR,
+)
 
 CONFIG = {
     "host": "0.0.0.0",
     "port": 8001,
-    "local_models_dir": os.path.join(BASE_DIR, "models"),
-    "local_voices_dir": os.path.join(BASE_DIR, "voices"),
+    "local_models_dir": MODELS_DIR,
+    "local_voices_dir": VOICES_DIR,
     "whisper_model": "whisper-large-v3",
     "max_text_chars": 1000,
     "playback_wait_timeout": 300,
-    "clone_prompts_dir": os.path.join(BASE_DIR, "clone_prompts"),
-    "audios_dir": os.path.join(BASE_DIR, "audios"),
+    "clone_prompts_dir": CLONE_PROMPTS_DIR,
+    "audios_dir": AUDIOS_DIR,
     "log_file": os.path.join(BASE_DIR, "requests.log"),
     # Modelo que se carga al arrancar. Si está vacío o no existe, se usa el primero disponible.
     "default_model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
@@ -23,15 +29,10 @@ CONFIG = {
     # Tamaño máximo de requests.log antes de rotar (bytes)
     "log_max_bytes": 5 * 1024 * 1024,
     # Edad máxima (días) de los audios antes de ser eliminados al arrancar
-    "audios_max_age_days": 7
+    "audios_max_age_days": 7,
 }
 
-# Valores por defecto
-def_language = "Spanish"
-def_voice = "Serena"
-def_instruct = "Habla en español de España con acento neutro. Evita cualquier tono robótico."
-
 # Inicializar directorios
-os.makedirs(CONFIG["clone_prompts_dir"], exist_ok=True)
-os.makedirs(CONFIG["local_voices_dir"], exist_ok=True)
-os.makedirs(CONFIG["audios_dir"], exist_ok=True)
+os.makedirs(CLONE_PROMPTS_DIR, exist_ok=True)
+os.makedirs(VOICES_DIR, exist_ok=True)
+os.makedirs(AUDIOS_DIR, exist_ok=True)

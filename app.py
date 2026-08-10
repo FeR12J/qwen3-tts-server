@@ -2,45 +2,89 @@
 """Aplicación principal del servidor TTS."""
 
 import os
+import asyncio
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import asyncio
-import sys
-
-# Agregar ruta para imports relativos
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config.settings import CONFIG
-from utils.helpers import get_vram_available, cleanup_old_audios
-from routes.tts_routes import create_tts_routes
-from routes.webui_routes import create_webui_routes
-from routes.whisper_routes import create_whisper_routes
-from services.model_service import load_model
-from services import config_service
+from utils.logging import setup_logging
+from utils.gpu import get_vram_available
+from services.config_service import load_runtime_config, apply_log_level
+from services.queue_service import QueueService
+from services.model_manager import ModelManager
+from services.voice_manager import VoiceManager
+from services.audio_service import AudioService
+from services.metrics_service import MetricsService
+from services.tts_service import TTSService
+from routes import (
+    create_tts_routes,
+    create_models_routes,
+    create_voices_routes,
+    create_system_routes,
+    create_whisper_routes,
+    create_auth_routes,
+    create_webui_routes,
+)
 
-# Configuración de logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+setup_logging()
 logger = logging.getLogger("tts")
 
-# Variables globales (usando listas para mutabilidad en async)
-model_registry = {}
-current_model_id_var = [None]  # Wrapper para mutabilidad
-clone_prompt_var = [None]  # Prompt único de clonación
-semaphore = asyncio.Semaphore(1)
+
+@dataclass
+class AppContext:
+    """Contenedor de dependencias de la aplicación."""
+    config: dict
+    queue: QueueService
+    models: ModelManager
+    voices: VoiceManager
+    audio: AudioService
+    metrics: MetricsService
+    tts: TTSService
+
+
+def build_context() -> AppContext:
+    """Construir e interconectar todos los servicios."""
+    queue = QueueService()
+    models = ModelManager()
+    voices = VoiceManager(models)
+    audio = AudioService(CONFIG, queue)
+    metrics = MetricsService(CONFIG)
+    tts = TTSService(CONFIG, models, voices, audio)
+    return AppContext(
+        config=CONFIG,
+        queue=queue,
+        models=models,
+        voices=voices,
+        audio=audio,
+        metrics=metrics,
+        tts=tts,
+    )
+
+
+def register_routes(app: FastAPI, ctx: AppContext):
+    """Registrar todas las rutas HTTP."""
+    create_tts_routes(app, ctx)
+    create_models_routes(app, ctx)
+    create_voices_routes(app, ctx)
+    create_system_routes(app, ctx)
+    create_whisper_routes(app, ctx)
+    create_auth_routes(app, ctx)
+    create_webui_routes(app, ctx)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida de la aplicación."""
-    config_service.load_runtime_config()
-    config_service.apply_log_level()
-    create_tts_routes(app, model_registry, current_model_id_var, clone_prompt_var, semaphore)
-    create_webui_routes(app, model_registry, current_model_id_var, clone_prompt_var)
-    create_whisper_routes(app, semaphore)
-    await startup_procedure()
+    ctx = build_context()
+    load_runtime_config()
+    apply_log_level()
+    register_routes(app, ctx)
+    await startup_procedure(ctx)
     yield
 
 
@@ -55,32 +99,23 @@ app.add_middleware(
 )
 
 
-async def startup_procedure():
+async def startup_procedure(ctx: AppContext):
     """Procedimiento de inicialización del servidor."""
-    
-    print("\n" + "."*60)
+
+    print("\n" + "." * 60)
     print("Iniciando qwen3-tts server")
-    print("."*60)
-    
+    print("." * 60)
+
     # Limpiar audios antiguos
-    cleanup_old_audios(CONFIG["audios_dir"], CONFIG["audios_max_age_days"])
-    
+    ctx.audio.cleanup_old(CONFIG["audios_max_age_days"])
+
     # Modelos locales
-    try:
-        local_models = [d for d in os.listdir(CONFIG["local_models_dir"]) 
-                       if os.path.isdir(os.path.join(CONFIG["local_models_dir"], d))]
-        
-        print(f"\n📦 Modelos locales disponibles ({len(local_models)}):")
-        for i, m in enumerate(sorted(local_models), 1):
-            print(f"   {i}. {m}")
-            
-    except FileNotFoundError:
-        print(f"\nDirectorio de modelos no encontrado: {CONFIG['local_models_dir']}")
-        local_models = []
-    except Exception as e:
-        print(f"\nError leyendo directorio de modelos: {e}")
-        local_models = []
-    
+    local_models = ctx.models.list_local_models()
+
+    print(f"\n📦 Modelos locales disponibles ({len(local_models)}):")
+    for i, m in enumerate(local_models, 1):
+        print(f"   {i}. {m}")
+
     # Seleccionar modelo por defecto (configurable, fallback al primero disponible)
     if len(local_models) > 0:
         selected_model = None
@@ -90,78 +125,50 @@ async def startup_procedure():
             selected_model = local_models[0]
             if CONFIG.get("default_model"):
                 print(f"\n⚠️  Modelo por defecto '{CONFIG['default_model']}' no encontrado, usando '{selected_model}'")
-        
+
         print(f"\nModelo seleccionado por defecto: {selected_model}")
-        
+
         try:
-            model = await load_model(selected_model, model_registry)
-            entry = model_registry[selected_model]
-            current_model_id_var[0] = selected_model
-            print(f"   Tipo: {entry['type']}")
+            async with ctx.queue.infer():
+                info = await ctx.models.load_model(selected_model)
+            print(f"   Tipo: {info.model_type}")
             print(f"   VRAM disponible: {get_vram_available()} GB")
         except Exception as e:
             print(f"\nError cargando modelo por defecto: {e}")
     else:
         print("\nNo hay modelos disponibles. El servidor funcionará sin modelo inicial.")
-    
+
     # Voces locales
-    try:
-        local_voices = [d for d in os.listdir(CONFIG["local_voices_dir"]) 
-                       if os.path.isdir(os.path.join(CONFIG["local_voices_dir"], d))]
-        
-        print(f"\nVoces locales disponibles ({len(local_voices)}):")
-        for i, v in enumerate(sorted(local_voices), 1):
-            voice_path = os.path.join(CONFIG["local_voices_dir"], v)
-            has_wav = os.path.exists(os.path.join(voice_path, "voice.wav"))
-            has_txt = os.path.exists(os.path.join(voice_path, "text.txt"))
-            status = "OK" if (has_wav and has_txt) else ("KO" if not has_wav else "!?")
-            print(f"   {i}. {v} {status}")
-            
-    except FileNotFoundError:
-        print(f"\nDirectorio de voces no encontrado: {CONFIG['local_voices_dir']}")
-        local_voices = []
-    except Exception as e:
-        print(f"\nError leyendo directorio de voces: {e}")
-        local_voices = []
-    
+    local_voices = ctx.voices.list_voices()
+
+    print(f"\nVoces locales disponibles ({len(local_voices)}):")
+    for i, v in enumerate(local_voices, 1):
+        status = "OK" if v["valid"] else ("KO" if not v["has_voice_wav"] else "!?")
+        print(f"   {i}. {v['name']} {status}")
+
     # Intentar clonar voz por defecto si hay modelos y voces disponibles
-    if len(local_models) > 0 and len(local_voices) >= 1 and current_model_id_var[0] is not None:
-        
+    if len(local_models) > 0 and len(local_voices) >= 1 and ctx.models.is_loaded():
+
         selected_voice = None
-        if CONFIG.get("default_voice") and CONFIG["default_voice"] in local_voices:
+        if CONFIG.get("default_voice") and any(
+            v["name"] == CONFIG["default_voice"] for v in local_voices
+        ):
             selected_voice = CONFIG["default_voice"]
         else:
-            selected_voice = local_voices[0]
-        
-        wav_path = os.path.join(CONFIG["local_voices_dir"], selected_voice, "voice.wav")
-        txt_path = os.path.join(CONFIG["local_voices_dir"], selected_voice, "text.txt")
-        
-        if os.path.exists(wav_path) and os.path.exists(txt_path):
-            print(f"\n🎤 Intentando clonar voz por defecto: {selected_voice}")
-            
-            try:
-                with open(txt_path, "r", encoding="utf-8") as f:
-                    ref_text = f.read().strip()
-                
-                entry = model_registry[current_model_id_var[0]]
-                model = entry["model"]
-                
-                clone_prompt_var[0] = await asyncio.to_thread(
-                    model.create_voice_clone_prompt,
-                    ref_audio=wav_path,
-                    ref_text=ref_text,
-                    x_vector_only_mode=False
-                )
-                
-                print(f"✅ Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
-            except Exception as e:
-                print(f"Error creando voz clonada (continuar sin voice cloning): {e}")
-        else:
-            print(f"\nFaltan archivos para voz '{selected_voice}'")
-    
-    print("\n" + "."*30)
+            selected_voice = local_voices[0]["name"]
+
+        print(f"\n🎤 Intentando clonar voz por defecto: {selected_voice}")
+
+        try:
+            async with ctx.queue.infer():
+                await ctx.voices.load_voice(selected_voice)
+            print(f"✅ Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
+        except Exception as e:
+            print(f"Error creando voz clonada (continuar sin voice cloning): {e}")
+
+    print("\n" + "." * 30)
     print("Escuchando...")
-    print("."*30 + "\n")
+    print("." * 30 + "\n")
     print(f"INFO:     WebUI disponible en: http://localhost:{CONFIG['port']}/webui")
     print(f"INFO:     Documentación de la API: http://localhost:{CONFIG['port']}/webui/docs\n")
 
