@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen3-TTS · Documentación de la API</title>
+<style>
+:root {
+  --bg:#0f1117; --card:#171a23; --card2:#1d2130; --border:#2a2f42;
+  --fg:#e6e9f2; --dim:#8b91a7; --acc:#4f8cff; --ok:#2ecc71; --err:#e74c3c;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--fg); font-family:system-ui,Segoe UI,Roboto,sans-serif; line-height:1.55; }
+header { padding:22px 28px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,#131622,#0f1117); }
+header h1 { font-size:20px; }
+header p { color:var(--dim); font-size:13px; margin-top:4px; }
+main { max-width:920px; margin:0 auto; padding:24px 28px 60px; }
+h2 { font-size:17px; margin:34px 0 12px; padding-top:10px; border-top:1px solid var(--border); }
+h3 { font-size:14px; margin:20px 0 8px; color:var(--acc); }
+p { margin:8px 0; font-size:14px; }
+code, pre { font-family:ui-monospace,Consolas,monospace; }
+code { background:var(--card2); padding:2px 6px; border-radius:5px; font-size:13px; }
+pre { background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:14px 16px; overflow-x:auto; font-size:13px; margin:10px 0; }
+table { width:100%; border-collapse:collapse; font-size:13px; margin:10px 0; }
+th, td { text-align:left; padding:9px 11px; border-bottom:1px solid var(--border); vertical-align:top; }
+th { color:var(--dim); font-weight:500; }
+.method { font-weight:700; font-size:11px; padding:2px 8px; border-radius:5px; }
+.m-get { background:#123a5e; color:#7cc4ff; }
+.m-post { background:#1d3b1d; color:#7ce89a; }
+.m-delete { background:#4a1d23; color:#ff9aa5; }
+.alert { border:1px solid var(--border); border-left:3px solid var(--acc); background:var(--card); padding:12px 14px; border-radius:8px; margin:12px 0; font-size:13px; }
+.alert.warn { border-left-color:var(--err); }
+a { color:var(--acc); text-decoration:none; }
+a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Qwen3-TTS · Documentación de la API</h1>
+  <p>Servidor FastAPI de texto a voz con modelos Qwen3-TTS locales y voice cloning.</p>
+</header>
+
+<main>
+
+<h2>Panel de administración</h2>
+<p>El panel web en <a href="/webui">/webui</a> permite seleccionar y cargar el modelo, clonar voces, probar la síntesis reproduciendo el audio en el navegador, ajustar la configuración en tiempo de ejecución y gestionar las claves API.</p>
+
+<h2>Autenticación con claves API</h2>
+<p>Cuando la exigencia de clave API está <b>activada</b> (desde el panel, sección "Claves API"), los endpoints del servicio requieren una clave válida. Se envía de una de estas dos formas:</p>
+<pre>X-API-Key: qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# o bien
+Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
+<p>Las claves se crean y gestionan en el panel (<code>/webui</code> → Claves API). El endpoint <code>/webui/docs</code> y las rutas de información (<code>/</code>, <code>/models</code>, <code>/voices</code>) no requieren clave.</p>
+
+<h2>Endpoints</h2>
+<table>
+  <thead><tr><th>Método</th><th>Ruta</th><th>Descripción</th><th>Clave</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/</code></td><td>Estado del servidor (modelo actual, voice cloning, VRAM)</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/tts</code></td><td>Generar audio WAV (texto, language, speaker, instruct)</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/tts/play</code></td><td>Generar y reproducir el audio en el equipo del servidor</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/tts/audio/speech</code></td><td>Generar audio compatible con OpenWebUI (text o input)</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/model/load</code></td><td>Cargar un modelo local <code>{ "model_id": "..." }</code></td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar el modelo actual y liberar VRAM</td><td>Sí</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/models</code></td><td>Listar modelos disponibles (alias <code>/tts/audio/models</code>)</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz subiendo un WAV + transcripción (multipart). La guarda y la clona</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe</code></td><td>Transcribir audio a texto con Whisper (multipart: <code>audio</code>, opcional <code>language</code>)</td><td>Sí</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/transcribe/status</code></td><td>Estado del modelo Whisper (cargado/descargado, dispositivo)</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe/unload</code></td><td>Descargar el modelo Whisper y liberar memoria</td><td>Sí</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/voices</code></td><td>Listar voces disponibles (alias <code>/tts/audio/voices</code>)</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/webui</code></td><td>Panel de administración</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/docs</code></td><td>Esta documentación</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/api/config</code></td><td>Leer configuración en tiempo de ejecución</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/config</code></td><td>Actualizar configuración (máx. chars, defaults, log level, claves...)</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/api/apikeys</code></td><td>Listar claves API</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/apikeys</code></td><td>Crear clave <code>{ "name": "..." }</code> — se devuelve una sola vez</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/apikeys/{id}/toggle</code></td><td>Activar/desactivar una clave</td><td>No</td></tr>
+    <tr><td><span class="method m-delete">DELETE</span></td><td><code>/webui/api/apikeys/{id}</code></td><td>Eliminar una clave</td><td>No</td></tr>
+  </tbody>
+</table>
+
+<h2>Generar audio (curl)</h2>
+<h3>Con voz por defecto</h3>
+<pre>curl -X POST http://localhost:8001/tts \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -d '{
+    "text": "Hola, esto es una prueba de voz.",
+    "language": "Spanish",
+    "speaker": "Serena",
+    "instruct": "Habla con entusiasmo."
+  }' \
+  --output voz.wav</pre>
+<h3>Con voz clonada</h3>
+<pre># 1. Clonar una voz local (voices/&lt;nombre&gt;/voice.wav + text.txt)
+curl -X POST http://localhost:8001/voice/load \
+  -H "Content-Type: application/json" \
+  -d '{"voice_name": "alberto"}'
+
+# 2. Generar con la voz clonada (se usa automáticamente)
+curl -X POST http://localhost:8001/tts \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Ahora habla la voz clonada."}' \
+  --output clon.wav
+
+# 3. Volver a la voz por defecto
+curl -X POST http://localhost:8001/voice/unload</pre>
+
+<h3>Crear una voz nueva (subiendo archivos)</h3>
+<p>Se suben el audio WAV y su transcripción con <code>multipart/form-data</code>. La voz se guarda en <code>voices/&lt;nombre&gt;/</code> y se clona automáticamente:</p>
+<pre>curl -X POST http://localhost:8001/voice/create \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -F "voice_name=maria" \
+  -F "text=Hola, esta es la transcripción del audio de referencia." \
+  -F "audio=@/ruta/al/audio.wav"</pre>
+
+<h2>Transcripción de audio (Whisper)</h2>
+<p>El servidor incluye transcripción de audio con el modelo Whisper local (<code>models/whisper-large-v3</code>). El modelo se carga de forma perezosa en la primera petición y usa el dispositivo configurado (<code>device</code>). Formatos soportados: wav, mp3, flac, ogg, m4a.</p>
+<pre># Transcribir (idioma automático)
+curl -X POST http://localhost:8001/transcribe \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -F "audio=@/ruta/al/audio.mp3"
+
+# Transcribir forzando idioma español
+curl -X POST http://localhost:8001/transcribe \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -F "audio=@/ruta/al/audio.wav" \
+  -F "language=es"</pre>
+<p>Respuesta: <code>{"status":"ok","text":"...","language":"es","duration_seconds":12.3,"model":"whisper-large-v3","device":"cuda:0"}</code></p>
+
+<h2>Generar audio (Python)</h2>
+<pre>import requests
+
+API = "http://localhost:8001"
+KEY = "qt-tu-clave-aqui"   # vacío si las claves están desactivadas
+
+headers = {"Content-Type": "application/json"}
+if KEY:
+    headers["X-API-Key"] = KEY
+
+resp = requests.post(f"{API}/tts", json={
+    "text": "Texto a sintetizar",
+    "language": "Spanish",
+}, headers=headers)
+
+resp.raise_for_status()
+with open("audio.wav", "wb") as f:
+    f.write(resp.content)
+print("Audio guardado en audio.wav")</pre>
+
+<h2>OpenWebUI</h2>
+<p>En OpenWebUI, configura un <b>engine de audio (pipeline TTS)</b> o usa la función externa apuntando a:</p>
+<pre>URL: http://HOST_DEL_SERVIDOR:8001/tts/audio/speech
+API key: qt-tu-clave-aqui   (si las claves están activadas)</pre>
+<p>El endpoint acepta <code>text</code> o <code>input</code>, y devuelve <code>audio/wav</code>.</p>
+
+<h2>Configuración en tiempo de ejecución</h2>
+<p>Campos disponibles en <code>POST /webui/api/config</code> (todos opcionales, se persisten en <code>config/runtime.json</code>):</p>
+<pre>{
+  "max_text_chars": 1000,          // límite de caracteres por petición
+  "playback_wait_timeout": 300,    // timeout de /tts/play (segundos)
+  "def_language": "Spanish",       // idioma por defecto
+  "def_voice": "Serena",           // speaker por defecto
+  "def_instruct": "Habla en español...",  // instrucción por defecto
+  "log_level": "INFO",             // DEBUG | INFO | WARNING | ERROR
+  "log_requests": true,            // registrar peticiones en requests.log
+  "api_keys_enabled": false,       // exigir clave API en el servicio
+  "device": "auto"                 // auto | cpu | cuda:0 | cuda:1 | ...
+}</pre>
+<p>El campo <code>device</code> selecciona la GPU (si hay varias) o fuerza el uso de CPU:
+<code>auto</code> usa la primera GPU disponible y cae a CPU si no hay CUDA; <code>cpu</code> fuerza la CPU (dtype float32); <code>cuda:N</code> usa la GPU N. Si la GPU solicitada no existe, se usa <code>cuda:0</code>. El cambio se aplica al cargar el modelo. Las GPUs disponibles se pueden consultar en <code>GET /webui/api/devices</code>.</p>
+
+<h2>Gestión de claves API (curl)</h2>
+<pre># Crear clave (la clave completa solo se muestra una vez)
+curl -X POST http://localhost:8001/webui/api/apikeys \
+  -H "Content-Type: application/json" -d '{"name": "openwebui"}'
+
+# Listar claves (enmascaradas)
+curl http://localhost:8001/webui/api/apikeys
+
+# Activar/desactivar una clave
+curl -X POST http://localhost:8001/webui/api/apikeys/&lt;id&gt;/toggle
+
+# Eliminar una clave
+curl -X DELETE http://localhost:8001/webui/api/apikeys/&lt;id&gt;</pre>
+
+<h2>Notas</h2>
+<div class="alert">El audio se devuelve como <code>audio/wav</code>. El servidor guarda una copia de cada generación en <code>audios/</code> (los antiguos se limpian automáticamente al arrancar).</div>
+<div class="alert warn">Las claves se almacenan como hash SHA-256. Si pierdes una clave, elimínala y crea otra.</div>
+<div class="alert">Documentación interactiva del framework disponible en <a href="/docs" target="_blank">/docs</a> (Swagger UI).</div>
+
+</main>
+</body>
+</html>
