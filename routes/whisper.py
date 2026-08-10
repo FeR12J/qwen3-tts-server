@@ -12,6 +12,7 @@ from config.settings import CONFIG
 from security.auth import require_api_key
 from security.validation import validate_audio_size
 from services import whisper_service
+from services.gpu_management import prepare_for_whisper
 from services.model_manager import GPUOutOfMemoryError
 
 logger = logging.getLogger("tts")
@@ -43,6 +44,9 @@ def create_whisper_routes(app: FastAPI, ctx):
 
             data = await audio.read()
             validate_audio_size(data, MAX_TRANSCRIBE_AUDIO_BYTES)
+
+            # Liberar VRAM del modelo TTS antes de cargar Whisper (si la config lo exige)
+            await prepare_for_whisper(ctx.models, ctx.voices, whisper_service)
 
             try:
                 result = await asyncio.to_thread(whisper_service.transcribe, data, language)

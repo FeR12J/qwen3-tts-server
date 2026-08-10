@@ -11,7 +11,9 @@ from security.auth import require_api_key
 from security.permissions import require_model_loaded
 from security.validation import validate_text, require_text
 from services.config_service import get_runtime_config
+from services.gpu_management import prepare_for_tts
 from services.model_manager import GPUOutOfMemoryError
+from services import whisper_service
 from schemas.tts import TTSRequest, TTSRequestOpenWebUI
 
 logger = logging.getLogger("tts")
@@ -23,6 +25,7 @@ def create_tts_routes(app: FastAPI, ctx):
     @app.post("/tts", dependencies=[Depends(require_api_key)])
     async def tts_endpoint(req_body: TTSRequest, req: Request):
         async with ctx.queue.inference_lock():
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             rc = get_runtime_config()
             validate_text(req_body.text, rc["max_text_chars"])
             if rc.get("log_requests", True):
@@ -51,6 +54,7 @@ def create_tts_routes(app: FastAPI, ctx):
     async def tts_play_endpoint(req_body: TTSRequest, req: Request):
         """Generar TTS y reproducirlo directamente en este equipo, esperando a que la reproducción anterior termine."""
         async with ctx.queue.inference_lock():
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             rc = get_runtime_config()
             validate_text(req_body.text, rc["max_text_chars"])
             if rc.get("log_requests", True):
@@ -84,6 +88,7 @@ def create_tts_routes(app: FastAPI, ctx):
     @app.post("/tts/audio/speech", dependencies=[Depends(require_api_key)])
     async def openwebui_tts(req_body: TTSRequestOpenWebUI, req: Request):
         async with ctx.queue.inference_lock():
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             rc = get_runtime_config()
             text = req_body.text or req_body.input
             require_text(text)

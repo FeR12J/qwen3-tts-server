@@ -14,7 +14,9 @@ from security.validation import (
     validate_audio_size,
 )
 from schemas.voices import LoadVoiceRequest
+from services.gpu_management import prepare_for_tts
 from services.model_manager import GPUOutOfMemoryError
+from services import whisper_service
 
 logger = logging.getLogger("tts")
 
@@ -28,6 +30,7 @@ def create_voices_routes(app: FastAPI, ctx):
     @app.post("/voice/load", dependencies=[Depends(require_api_key)])
     async def load_voice(req_body: LoadVoiceRequest):
         async with ctx.queue.inference_lock():
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             await require_model_loaded(ctx.models)
             voice_name = req_body.voice_name.strip()
             validate_voice_name(voice_name)
@@ -64,6 +67,7 @@ def create_voices_routes(app: FastAPI, ctx):
     ):
         """Crear una voz subiendo un WAV y su transcripción. La guarda y la clona."""
         async with ctx.queue.inference_lock():
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             await require_model_loaded(ctx.models)
 
             voice_name = voice_name.strip()

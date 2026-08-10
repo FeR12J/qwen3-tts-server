@@ -90,6 +90,9 @@ class ModelManager:
         # model_id -> {"model", "type", "state", "error", "loaded_at", "device", "dtype"}
         self._registry: dict = {}
         self._active_id = None
+        # Último modelo que estuvo activo (para restaurarlo tras descargas
+        # automáticas de VRAM, p.ej. al ceder la GPU a Whisper)
+        self._last_active_id = None
         # Cargas en curso: model_id -> Future. Coalesce peticiones simultáneas
         # del mismo modelo para no crear nunca dos instancias en GPU. Cada
         # future se resuelve con (ok, ModelInfo|None, Exception|None). La
@@ -309,9 +312,14 @@ class ModelManager:
         entry["state"] = ModelState.UNLOADING.value
         self._registry.pop(model_id, None)
         if self._active_id == model_id:
+            self._last_active_id = model_id
             self._active_id = None
         self._free_entry(entry)
         logger.info(f"Modelo descargado: {model_id}")
+
+    def last_active_id(self) -> str | None:
+        """Último modelo que estuvo activo (o None si nunca hubo)."""
+        return self._last_active_id
 
     # -- Inferencia (solo ModelManager toca la instancia del modelo) -------
 

@@ -9,7 +9,9 @@ from fastapi import FastAPI, Depends, HTTPException
 from config.settings import CONFIG
 from security.auth import require_api_key
 from security.validation import validate_model_id
+from services.gpu_management import prepare_for_tts
 from services.model_manager import GPUOutOfMemoryError
+from services import whisper_service
 from schemas.models import LoadModelRequest
 
 logger = logging.getLogger("tts")
@@ -28,6 +30,10 @@ def create_models_routes(app: FastAPI, ctx):
             validate_model_id(model_id)
 
             try:
+                # Liberar VRAM que ocupe Whisper antes de cargar el modelo TTS
+                await prepare_for_tts(
+                    ctx.models, ctx.voices, whisper_service, restore_model=False
+                )
                 info = await ctx.models.load_model(model_id)
                 return {
                     "status": "ok",

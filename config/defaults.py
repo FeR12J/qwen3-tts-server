@@ -17,4 +17,10 @@ DEFAULTS = {
     "api_keys_enabled": False,
     # Dispositivo de inferencia: "auto" (GPU si hay), "cuda:N" (GPU concreta) o "cpu"
     "device": "auto",
+    # Gestión de VRAM compartida TTS <-> Whisper (GPUs pequeñas):
+    # - unload_tts_for_whisper: descargar el modelo TTS antes de transcribir
+    # - unload_whisper_for_tts: descargar Whisper antes de usar el modelo TTS
+    # En GPUs grandes, poner ambos a false para mantener ambos modelos cargados.
+    "unload_tts_for_whisper": True,
+    "unload_whisper_for_tts": True,
 }

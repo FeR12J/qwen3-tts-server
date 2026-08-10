@@ -413,6 +413,17 @@ footer a:hover { text-decoration:underline; }
             <select id="cfgLogRequests"><option value="true">Sí</option><option value="false">No</option></select>
           </div>
         </div>
+        <div class="hint" style="margin:12px 0 4px">Gestión de VRAM compartida TTS &lt;-&gt; Whisper (GPUs pequeñas). En GPUs grandes, pon ambos en &laquo;No&raquo; para mantener los dos modelos cargados.</div>
+        <div class="row" style="gap:14px; align-items:flex-start">
+          <div style="flex:1">
+            <label for="cfgUnloadTtsForWhisper">Descargar TTS antes de Whisper</label>
+            <select id="cfgUnloadTtsForWhisper"><option value="true">Sí</option><option value="false">No</option></select>
+          </div>
+          <div style="flex:1">
+            <label for="cfgUnloadWhisperForTts">Descargar Whisper antes de TTS</label>
+            <select id="cfgUnloadWhisperForTts"><option value="true">Sí</option><option value="false">No</option></select>
+          </div>
+        </div>
         <label for="cfgInstruct">Instrucción de voz por defecto</label>
         <textarea id="cfgInstruct" style="min-height:60px"></textarea>
         <div class="row" style="margin-top:16px">
@@ -672,6 +683,8 @@ async function loadConfig() {
     $('cfgInstruct').value = c.def_instruct || '';
     $('cfgLogLevel').value = c.log_level;
     $('cfgLogRequests').value = String(c.log_requests);
+    $('cfgUnloadTtsForWhisper').value = String(c.unload_tts_for_whisper);
+    $('cfgUnloadWhisperForTts').value = String(c.unload_whisper_for_tts);
     $('keysGlobal').checked = !!c.api_keys_enabled;
     loadDevices();
   } catch (e) { toast('Error cargando configuración: ' + e.message, false); }
@@ -686,6 +699,8 @@ async function saveConfig() {
     def_instruct: $('cfgInstruct').value,
     log_level: $('cfgLogLevel').value,
     log_requests: $('cfgLogRequests').value === 'true',
+    unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',
+    unload_whisper_for_tts: $('cfgUnloadWhisperForTts').value === 'true',
     device: $('cfgDevice').value
   };
   try {

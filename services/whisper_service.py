@@ -77,6 +77,18 @@ def unload():
     logger.info("Modelo Whisper descargado")
 
 
+def unload_if_loaded() -> bool:
+    """Descargar Whisper solo si está cargado (no-op en caso contrario).
+
+    Devuelve True si se descargó algo. Sirve para liberar VRAM antes de
+    generar TTS en GPUs pequeñas.
+    """
+    if _model is None:
+        return False
+    unload()
+    return True
+
+
 def _decode_audio(audio_bytes: bytes) -> tuple:
     """Decodificar audio a mono float32 a 16 kHz (wav, mp3, flac, ogg, m4a...)."""
     ffmpeg = shutil.which("ffmpeg")
