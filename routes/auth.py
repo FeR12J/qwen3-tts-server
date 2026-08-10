@@ -3,9 +3,10 @@
 
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Depends, HTTPException
 
 from schemas.system import ApiKeyCreate
+from security.auth import require_admin
 from services import apikey_service
 
 logger = logging.getLogger("tts")
@@ -14,14 +15,14 @@ logger = logging.getLogger("tts")
 def create_auth_routes(app: FastAPI, ctx):
     """Rutas de gestión de claves API (panel de administración)."""
 
-    @app.get("/webui/api/apikeys")
+    @app.get("/webui/api/apikeys", dependencies=[Depends(require_admin)])
     async def get_api_keys():
         return {
             "enabled": apikey_service.global_enabled(),
             "keys": apikey_service.list_keys(),
         }
 
-    @app.post("/webui/api/apikeys")
+    @app.post("/webui/api/apikeys", dependencies=[Depends(require_admin)])
     async def create_api_key(body: ApiKeyCreate):
         name = body.name.strip()
         if not name:
@@ -31,7 +32,7 @@ def create_auth_routes(app: FastAPI, ctx):
         except ValueError as e:
             raise HTTPException(400, str(e))
 
-    @app.delete("/webui/api/apikeys/{key_id}")
+    @app.delete("/webui/api/apikeys/{key_id}", dependencies=[Depends(require_admin)])
     async def delete_api_key(key_id: str):
         try:
             apikey_service.delete_key(key_id)
@@ -39,7 +40,7 @@ def create_auth_routes(app: FastAPI, ctx):
             raise HTTPException(404, str(e))
         return {"status": "ok"}
 
-    @app.post("/webui/api/apikeys/{key_id}/toggle")
+    @app.post("/webui/api/apikeys/{key_id}/toggle", dependencies=[Depends(require_admin)])
     async def toggle_api_key(key_id: str):
         try:
             return apikey_service.toggle_key(key_id)

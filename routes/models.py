@@ -7,7 +7,7 @@ import traceback
 from fastapi import FastAPI, Depends, HTTPException
 
 from config.settings import settings
-from security.auth import require_api_key
+from security.auth import require_admin
 from security.validation import validate_model_id
 from services.gpu_management import prepare_for_tts
 from services.model_manager import GPUOutOfMemoryError
@@ -20,7 +20,7 @@ logger = logging.getLogger("tts")
 def create_models_routes(app: FastAPI, ctx):
     """Rutas de carga/descarga y listado de modelos."""
 
-    @app.post("/model/load", dependencies=[Depends(require_api_key)])
+    @app.post("/model/load", dependencies=[Depends(require_admin)])
     async def load_model_endpoint(req_body: LoadModelRequest):
         async with ctx.queue.model_lock():
             # Resetear voice cloning al cargar nuevo modelo
@@ -55,7 +55,7 @@ def create_models_routes(app: FastAPI, ctx):
                 logger.debug(traceback.format_exc())
                 raise HTTPException(500, f"Error cargando modelo: {str(e)}")
 
-    @app.post("/model/unload", dependencies=[Depends(require_api_key)])
+    @app.post("/model/unload", dependencies=[Depends(require_admin)])
     async def unload_model_endpoint():
         async with ctx.queue.model_lock():
             info = await ctx.models.get_active_model()

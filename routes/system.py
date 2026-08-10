@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Rutas de estado del sistema."""
+"""Rutas de estado del sistema (nivel PUBLIC)."""
 
 from fastapi import FastAPI
 
+from config.settings import VERSION
 from services.config_service import resolve_device
 
 
 def create_system_routes(app: FastAPI, ctx):
     """Rutas de estado y salud del servidor."""
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    @app.get("/version")
+    async def version():
+        return {"version": VERSION}
 
     @app.get("/")
     async def root():

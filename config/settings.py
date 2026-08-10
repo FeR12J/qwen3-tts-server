@@ -3,10 +3,26 @@
 
 Única fuente de verdad de toda la configuración del proyecto. No se usan
 llamadas dispersas a os.getenv: cualquier variable de entorno se lee aquí
-(prefijo TTS_, subcampos con __), p.ej. TTS_SERVER__HOST=0.0.0.0.
+(prefix QWEN_TTS_), p.ej. QWEN_TTS_HOST=0.0.0.0, QWEN_TTS_PORT=8001.
+
+Variables planas soportadas (mapeadas por Settings.settings_customise_sources):
+
+    QWEN_TTS_HOST              -> server.host
+    QWEN_TTS_PORT              -> server.port
+    QWEN_TTS_DEVICE            -> runtime.device
+    QWEN_TTS_DTYPE             -> runtime.dtype
+    QWEN_TTS_MODEL             -> tts.default_model
+    QWEN_TTS_REQUIRE_API_KEY   -> runtime.api_keys_enabled
+    QWEN_TTS_VOICES_DIR        -> paths.voices_dir
+    QWEN_TTS_AUDIO_DIR         -> paths.audios_dir
+
+El resto de variables usa el nombre compuesto por subgrupo
+(QWEN_TTS_<GRUPO>__<CAMPO>), p.ej. QWEN_TTS_CORS__ALLOW_ORIGINS.
+Precedencia: variables de entorno > data/runtime.json > defaults.
 """
 
 import os
+from typing import ClassVar
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,7 +58,7 @@ class PathsSettings(BaseModel):
     webui_dir: str = WEBUI_DIR
 
 
-class ModelSettings(BaseModel):
+class TtsSettings(BaseModel):
     """Modelo TTS que se carga al arrancar (si no existe, el primero)."""
     default_model: str = "Qwen3-TTS-12Hz-1.7B-VoiceDesign"
     default_voice: str = "annab"
@@ -74,8 +90,7 @@ class QueueSettings(BaseModel):
 
 
 class AuthSettings(BaseModel):
-    """Autenticación por clave API."""
-    api_keys_enabled: bool = False
+    """Archivo donde se persisten las claves API."""
     keys_file: str = Field(default_factory=lambda: os.path.join(DATA_DIR, "apikeys.json"))
 
 
@@ -87,7 +102,9 @@ class LoggingSettings(BaseModel):
 
 class RuntimeSettings(BaseModel):
     """Configuración en tiempo de ejecución: editable desde el panel y
-    persistida en disco (data/runtime.json)."""
+    persistida en disco (data/runtime.json). Las variables de entorno
+    QWEN_TTS_DEVICE, QWEN_TTS_DTYPE y QWEN_TTS_REQUIRE_API_KEY tienen
+    prioridad sobre el archivo persistido."""
     max_text_chars: int = 1000
     playback_wait_timeout: int = 300
     def_language: str = "Spanish"
@@ -109,19 +126,35 @@ class RuntimeSettings(BaseModel):
 
 # -- Objeto Settings único -------------------------------------------------
 
+VERSION = "1.0.0"
+"""Versión del servidor TTS (expuesta en /version)."""
+
 
 class Settings(BaseSettings):
     """Configuración centralizada del servidor TTS."""
 
+    # Variables de entorno planas QWEN_TTS_* -> (grupo, campo)
+    FLAT_ENV: ClassVar[dict] = {
+        "QWEN_TTS_HOST": ("server", "host"),
+        "QWEN_TTS_PORT": ("server", "port"),
+        "QWEN_TTS_DEVICE": ("runtime", "device"),
+        "QWEN_TTS_DTYPE": ("runtime", "dtype"),
+        "QWEN_TTS_MODEL": ("tts", "default_model"),
+        "QWEN_TTS_REQUIRE_API_KEY": ("runtime", "api_keys_enabled"),
+        "QWEN_TTS_VOICES_DIR": ("paths", "voices_dir"),
+        "QWEN_TTS_AUDIO_DIR": ("paths", "audios_dir"),
+    }
+
     model_config = SettingsConfigDict(
-        env_prefix="TTS_",
+        env_prefix="QWEN_TTS_",
         env_nested_delimiter="__",
         extra="ignore",
+        populate_by_name=True,
     )
 
     server: ServerSettings = ServerSettings()
     paths: PathsSettings = PathsSettings()
-    model: ModelSettings = ModelSettings()
+    tts: TtsSettings = TtsSettings()
     whisper: WhisperSettings = WhisperSettings()
     cors: CorsSettings = CorsSettings()
     limits: LimitsSettings = LimitsSettings()
@@ -129,6 +162,39 @@ class Settings(BaseSettings):
     auth: AuthSettings = AuthSettings()
     logging: LoggingSettings = LoggingSettings()
     runtime: RuntimeSettings = RuntimeSettings()
+
+    @classmethod
+    def _flat_env_values(cls) -> dict:
+        """Valores de las variables de entorno planas, agrupados por grupo."""
+        init = {}
+        for env_name, (group, field) in cls.FLAT_ENV.items():
+            value = os.environ.get(env_name)
+            if value is None or value == "":
+                continue
+            init.setdefault(group, {})[field] = value
+        return init
+
+    def settings_customise_sources(
+        cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        """Inyectar las variables planas QWEN_TTS_* como init (pydantic las
+        tipa: "true" -> bool, "8001" -> int). Tienen máxima precedencia."""
+        from pydantic_settings.sources.base import InitSettingsSource
+
+        flat = cls._flat_env_values()
+        if flat:
+            init_settings = InitSettingsSource(
+                cls,
+                {**flat, **getattr(init_settings, "init_kwargs", {})},
+                nested_model_default_partial_update=getattr(
+                    init_settings, "nested_model_default_partial_update", None
+                ),
+            )
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
 
 settings = Settings()

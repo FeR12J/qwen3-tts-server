@@ -6,6 +6,7 @@ este módulo solo gestiona la parte editable (settings.runtime) y su
 persistencia en disco.
 """
 
+import os
 import logging
 
 from config.settings import settings, RuntimeSettings
@@ -18,9 +19,29 @@ VALID_DTYPES = ("auto", "bfloat16", "float16", "float32")
 
 RUNTIME_FIELDS = tuple(RuntimeSettings.model_fields)
 
+# Variables de entorno con prioridad sobre data/runtime.json
+RUNTIME_ENV_VARS = {
+    "device": "QWEN_TTS_DEVICE",
+    "dtype": "QWEN_TTS_DTYPE",
+    "api_keys_enabled": "QWEN_TTS_REQUIRE_API_KEY",
+}
+
+
+def _env_runtime_values() -> dict:
+    """Valores runtime ya resueltos por pydantic desde variables de entorno."""
+    return {
+        field: getattr(settings.runtime, field)
+        for field, env_var in RUNTIME_ENV_VARS.items()
+        if os.environ.get(env_var)
+    }
+
 
 def load_runtime_config():
-    """Cargar configuración persistida desde disco (si existe)."""
+    """Cargar configuración persistida desde disco (si existe).
+
+    Precedencia: variables de entorno QWEN_TTS_* > data/runtime.json > defaults.
+    """
+    env_values = _env_runtime_values()
     settings.runtime = RuntimeSettings()
     data = load_runtime_file()
     valid = {
@@ -28,6 +49,7 @@ def load_runtime_config():
         for key, value in data.items()
         if key in RUNTIME_FIELDS and value is not None
     }
+    valid.update(env_values)
     if valid:
         settings.runtime = settings.runtime.model_copy(update=valid)
 

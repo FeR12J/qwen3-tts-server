@@ -134,12 +134,12 @@ async def startup_procedure(ctx: AppContext):
     # Seleccionar modelo por defecto (configurable, fallback al primero disponible)
     if len(local_models) > 0:
         selected_model = None
-        if settings.model.default_model and settings.model.default_model in local_models:
-            selected_model = settings.model.default_model
+        if settings.tts.default_model and settings.tts.default_model in local_models:
+            selected_model = settings.tts.default_model
         else:
             selected_model = local_models[0]
-            if settings.model.default_model:
-                print(f"\nModelo por defecto '{settings.model.default_model}' no encontrado, usando '{selected_model}'")
+            if settings.tts.default_model:
+                print(f"\nModelo por defecto '{settings.tts.default_model}' no encontrado, usando '{selected_model}'")
 
         print(f"\nModelo seleccionado por defecto: {selected_model}")
 
@@ -165,10 +165,10 @@ async def startup_procedure(ctx: AppContext):
     if len(local_models) > 0 and len(local_voices) >= 1 and ctx.models.is_loaded():
 
         selected_voice = None
-        if settings.model.default_voice and any(
-            v["name"] == settings.model.default_voice for v in local_voices
+        if settings.tts.default_voice and any(
+            v["name"] == settings.tts.default_voice for v in local_voices
         ):
-            selected_voice = settings.model.default_voice
+            selected_voice = settings.tts.default_voice
         else:
             selected_voice = local_voices[0]["name"]
 

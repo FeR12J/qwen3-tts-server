@@ -32,6 +32,10 @@ def global_enabled() -> bool:
     return bool(get_runtime_config().get("api_keys_enabled"))
 
 
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def create_key(name: str) -> dict:
     """Crear una clave API. La clave completa solo se devuelve una vez."""
     if not name:
@@ -39,13 +43,13 @@ def create_key(name: str) -> dict:
     _load()
     key = "qt-" + secrets.token_hex(16)
     entry = {
-        "id": secrets.token_hex(8),
+        "id": "key_" + secrets.token_hex(8),
         "name": name,
         "key_hash": _hash(key),
         "prefix": key[:8],
         "enabled": True,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "last_used": None,
+        "created_at": _now(),
+        "last_used_at": None,
     }
     _keys.append(entry)
     _save()
@@ -63,10 +67,16 @@ def list_keys() -> list:
             "masked": k.get("prefix", k["key_hash"][:8]) + "...",
             "enabled": k["enabled"],
             "created_at": k["created_at"],
-            "last_used": k["last_used"],
+            "last_used_at": k.get("last_used_at"),
         }
         for k in _keys
     ]
+
+
+def count_keys() -> int:
+    """Número de claves existentes (para el modo bootstrap de admin)."""
+    _load()
+    return len(_keys)
 
 
 def delete_key(key_id: str):
@@ -102,7 +112,7 @@ def verify_key(key: str) -> bool:
         if k["key_hash"] == digest:
             if not k["enabled"]:
                 return False
-            k["last_used"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            k["last_used_at"] = _now()
             _save()
             return True
     return False

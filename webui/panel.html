@@ -505,7 +505,7 @@ async function api(url, opts = {}) {
   if (!res.ok) {
     let msg = res.status + ' ' + res.statusText;
     try { const j = await res.json(); msg = j.detail || msg; } catch (e) {}
-    if (res.status === 401) msg = 'Se requiere una clave API válida (configúrala en el botón )';
+    if (res.status === 401) msg = 'Se requiere una clave API válida (configúrala en Clave activa, abajo)';
     throw new Error(msg);
   }
   return res;

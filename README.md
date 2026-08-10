@@ -83,33 +83,43 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 
 ## Endpoints
 
-| Método | Endpoint | Descripción | Clave API |
-|--------|----------|-------------|-----------|
-| GET | `/` | Estado del servidor | No |
-| POST | `/tts` | Generar TTS (estándar) | Sí |
-| POST | `/tts/play` | Generar TTS y reproducirlo en este equipo | Sí |
-| POST | `/tts/audio/speech` | Generar TTS (compatible OpenWebUI) | Sí |
-| GET | `/tts/audio/models` | Modelos disponibles (formato OpenWebUI) | No |
-| GET | `/tts/audio/voices` | Voces disponibles (formato OpenWebUI) | No |
-| POST | `/model/load` | Cargar modelo local | Sí |
-| POST | `/model/unload` | Descargar modelo y liberar VRAM | Sí |
-| GET | `/models` | Listar modelos disponibles | No |
-| POST | `/voice/load` | Cargar voz para clonación (solo modelos `base`) | Sí |
-| POST | `/voice/create` | Subir WAV + transcripción (multipart), la guarda y la clona | Sí |
-| POST | `/voice/unload` | Desactivar voice cloning | Sí |
-| GET | `/voices` | Listar voces disponibles | No |
-| POST | `/transcribe` | Transcribir audio a texto con Whisper | Sí |
-| GET | `/transcribe/status` | Estado del modelo Whisper | No |
-| POST | `/transcribe/unload` | Descargar Whisper y liberar VRAM | Sí |
-| GET | `/webui` | Panel de administración web | No |
-| GET | `/webui/docs` | Documentación de la API y ejemplos | No |
-| GET/POST | `/webui/api/config` | Leer/actualizar configuración en tiempo de ejecución | No |
-| GET | `/webui/api/devices` | GPUs disponibles y dispositivo en uso | No |
-| GET/POST | `/webui/api/apikeys` | Listar/crear claves API | No |
-| POST | `/webui/api/apikeys/{id}/toggle` | Activar/desactivar clave API | No |
-| DELETE | `/webui/api/apikeys/{id}` | Eliminar clave API | No |
+| Nivel | Método | Endpoint | Descripción |
+|-------|--------|----------|-------------|
+| PUBLIC | GET | `/health` | Estado del servidor |
+| PUBLIC | GET | `/version` | Versión del servidor |
+| PUBLIC | GET | `/` | Estado del servidor (modelo activo, VRAM) |
+| PUBLIC | GET | `/models`, `/tts/audio/models`, `/model/status` | Listar modelos disponibles |
+| PUBLIC | GET | `/voices`, `/tts/audio/voices` | Listar voces disponibles |
+| PUBLIC | GET | `/transcribe/status` | Estado del modelo Whisper |
+| PUBLIC | GET | `/webui`, `/webui/docs` | Panel y documentación |
+| PUBLIC | GET | `/webui/api/devices` | GPUs disponibles y dispositivo en uso |
+| PROTECTED | POST | `/tts` | Generar TTS (estándar) |
+| PROTECTED | POST | `/tts/play` | Generar TTS y reproducirlo en este equipo |
+| PROTECTED | POST | `/tts/audio/speech` | Generar TTS (compatible OpenWebUI) |
+| PROTECTED | POST | `/transcribe` | Transcribir audio a texto con Whisper |
+| PROTECTED | POST | `/transcribe/unload` | Descargar Whisper y liberar VRAM |
+| ADMIN | POST | `/model/load` | Cargar modelo local |
+| ADMIN | POST | `/model/unload` | Descargar modelo y liberar VRAM |
+| ADMIN | POST | `/voice/load` | Cargar voz para clonación (solo modelos `base`) |
+| ADMIN | POST | `/voice/create` | Subir WAV + transcripción (multipart), la guarda y la clona |
+| ADMIN | POST | `/voice/unload` | Desactivar voice cloning |
+| ADMIN | GET/POST | `/webui/api/config` | Leer/actualizar configuración en tiempo de ejecución |
+| ADMIN | GET/POST | `/webui/api/apikeys` | Listar/crear claves API |
+| ADMIN | POST | `/webui/api/apikeys/{id}/toggle` | Activar/desactivar clave API |
+| ADMIN | DELETE | `/webui/api/apikeys/{id}` | Eliminar clave API |
 
-Cuando la exigencia de clave API está activada (panel  Claves API), los endpoints de servicio requieren `X-API-Key: qt-...` o `Authorization: Bearer qt-...`.
+## Protección de endpoints
+
+- **PUBLIC** (`/health`, `/version`, estado y listados): sin autenticación.
+- **PROTECTED** (`/tts/*`, `/transcribe`): dependencia `require_api_key()`; exige `X-API-Key: qt-...` (o `Authorization: Bearer qt-...`) solo cuando la exigencia global de claves está activada (panel o `QWEN_TTS_REQUIRE_API_KEY=true`).
+- **ADMIN** (`/model/*`, `/voice/*`, `/apikeys/*`, `/config/*`): dependencia `require_admin()`; exige **siempre** una clave API válida, esté o no activada la exigencia global, de modo que las operaciones administrativas no quedan accesibles sin autenticación.
+- **Bootstrap**: si aún no existe ninguna clave, las operaciones ADMIN quedan abiertas para permitir crear la primera clave desde el panel. A partir de la primera clave, todas las operaciones ADMIN exigen autenticación.
+
+## Claves API
+
+- Las claves se almacenan **únicamente como hash** (SHA-256) en `data/apikeys.json`: `{"id": "key_...", "name": "...", "key_hash": "...", "created_at": "...", "last_used_at": "..."}`. Nunca se guarda la clave en claro.
+- La clave completa (`qt-...`) se muestra **una sola vez**, en la respuesta de creación; el panel la guarda localmente en el navegador y permite copiarla en ese momento.
+- El listado devuelve solo `id`, `name`, prefijo enmascarado, `created_at` y `last_used_at`.
 
 ## Transcripción (Whisper)
 
@@ -147,8 +157,15 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 ## Configuración
 
 ### config/settings.py
-- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `model` (`default_model`, `default_voice`), `whisper` (`whisper_model`), `limits`, `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars`, `device`, `dtype`, flags de VRAM, etc.).
-- Variables de entorno con prefijo `TTS_` y delimitador `__`, p.ej. `TTS_SERVER__HOST=0.0.0.0`.
+- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `whisper` (`whisper_model`), `limits`, `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars`, `device`, `dtype`, flags de VRAM, etc.).
+- Variables de entorno con prefijo `QWEN_TTS_`. Soporta al menos:
+  - `QWEN_TTS_HOST=0.0.0.0`, `QWEN_TTS_PORT=8001`
+  - `QWEN_TTS_DEVICE=cuda:0` (o `auto`/`cpu`), `QWEN_TTS_DTYPE=bfloat16` (o `float16`/`float32`/`auto`)
+  - `QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
+  - `QWEN_TTS_REQUIRE_API_KEY=true`
+  - `QWEN_TTS_VOICES_DIR=./voices`, `QWEN_TTS_AUDIO_DIR=./audios`
+- El resto de campos usa el nombre por subgrupo (`QWEN_TTS_<GRUPO>__<CAMPO>`), p.ej. `QWEN_TTS_CORS__ALLOW_ORIGINS=["*"]`.
+- Precedencia: variables de entorno > `data/runtime.json` > defaults. Las variables `QWEN_TTS_DEVICE`, `QWEN_TTS_DTYPE` y `QWEN_TTS_REQUIRE_API_KEY` (configuración en tiempo de ejecución) tienen prioridad sobre el archivo persistido.
 
 ### Configuración en tiempo de ejecución (`data/runtime.json`)
 Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API.

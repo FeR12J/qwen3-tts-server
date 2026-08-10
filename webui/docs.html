@@ -48,6 +48,7 @@ a:hover { text-decoration:underline; }
 
 <h2>Autenticación con claves API</h2>
 <p>Cuando la exigencia de clave API está <b>activada</b> (desde el panel, sección "Claves API"), los endpoints del servicio requieren una clave válida. Se envía de una de estas dos formas:</p>
+<p><b>Niveles de protección:</b> <b>Público</b> = sin autenticación · <b>Sí</b> = requiere <code>X-API-Key</code> si la exigencia global está activada · <b>Admin</b> = exige siempre una clave API válida (las operaciones administrativas no quedan accesibles sin autenticación; si aún no existe ninguna clave, se permite crear la primera).</p>
 <pre>X-API-Key: qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # o bien
 Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
@@ -57,28 +58,30 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
 <table>
   <thead><tr><th>Método</th><th>Ruta</th><th>Descripción</th><th>Clave</th></tr></thead>
   <tbody>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/health</code></td><td>Estado del servidor</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/version</code></td><td>Versión del servidor</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/</code></td><td>Estado del servidor (modelo actual, voice cloning, VRAM)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts</code></td><td>Generar audio WAV (texto, language, speaker, instruct)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/play</code></td><td>Generar y reproducir el audio en el equipo del servidor</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/audio/speech</code></td><td>Generar audio compatible con OpenWebUI (text o input)</td><td>Sí</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/model/load</code></td><td>Cargar un modelo local <code>{ "model_id": "..." }</code></td><td>Sí</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar el modelo actual y liberar VRAM</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/model/load</code></td><td>Cargar un modelo local <code>{ "model_id": "..." }</code></td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar el modelo actual y liberar VRAM</td><td>Admin</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/models</code></td><td>Listar modelos disponibles (alias <code>/tts/audio/models</code>)</td><td>No</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Sí</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz subiendo un WAV + transcripción (multipart). La guarda y la clona</td><td>Sí</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz subiendo un WAV + transcripción (multipart). La guarda y la clona</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe</code></td><td>Transcribir audio a texto con Whisper (multipart: <code>audio</code>, opcional <code>language</code>)</td><td>Sí</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/transcribe/status</code></td><td>Estado del modelo Whisper (cargado/descargado, dispositivo)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe/unload</code></td><td>Descargar el modelo Whisper y liberar memoria</td><td>Sí</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/voices</code></td><td>Listar voces disponibles (alias <code>/tts/audio/voices</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/webui</code></td><td>Panel de administración</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/webui/docs</code></td><td>Esta documentación</td><td>No</td></tr>
-    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/api/config</code></td><td>Leer configuración en tiempo de ejecución</td><td>No</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/config</code></td><td>Actualizar configuración (máx. chars, defaults, log level, claves...)</td><td>No</td></tr>
-    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/api/apikeys</code></td><td>Listar claves API</td><td>No</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/apikeys</code></td><td>Crear clave <code>{ "name": "..." }</code> — se devuelve una sola vez</td><td>No</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/apikeys/{id}/toggle</code></td><td>Activar/desactivar una clave</td><td>No</td></tr>
-    <tr><td><span class="method m-delete">DELETE</span></td><td><code>/webui/api/apikeys/{id}</code></td><td>Eliminar una clave</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/api/config</code></td><td>Leer configuración en tiempo de ejecución</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/config</code></td><td>Actualizar configuración (máx. chars, defaults, log level, claves...)</td><td>Admin</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/webui/api/apikeys</code></td><td>Listar claves API</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/apikeys</code></td><td>Crear clave <code>{ "name": "..." }</code> — se devuelve una sola vez</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/webui/api/apikeys/{id}/toggle</code></td><td>Activar/desactivar una clave</td><td>Admin</td></tr>
+    <tr><td><span class="method m-delete">DELETE</span></td><td><code>/webui/api/apikeys/{id}</code></td><td>Eliminar una clave</td><td>Admin</td></tr>
   </tbody>
 </table>
 

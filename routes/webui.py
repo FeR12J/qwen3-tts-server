@@ -4,10 +4,11 @@
 import os
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.responses import FileResponse
 
 from config.settings import settings
+from security.auth import require_admin
 from schemas.system import ConfigUpdate
 from security.validation import validate_config_update
 from services import config_service
@@ -29,11 +30,11 @@ def create_webui_routes(app: FastAPI, ctx):
     async def webui_docs():
         return FileResponse(os.path.join(WEBUI_DIR, "docs.html"))
 
-    @app.get("/webui/api/config")
+    @app.get("/webui/api/config", dependencies=[Depends(require_admin)])
     async def get_config():
         return config_service.get_runtime_config()
 
-    @app.post("/webui/api/config")
+    @app.post("/webui/api/config", dependencies=[Depends(require_admin)])
     async def set_config(body: ConfigUpdate):
         changes = body.model_dump(exclude_none=True)
         validate_config_update(changes, config_service)

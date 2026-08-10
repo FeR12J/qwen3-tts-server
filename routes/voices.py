@@ -6,7 +6,7 @@ import traceback
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
-from security.auth import require_api_key
+from security.auth import require_admin
 from security.permissions import require_model_loaded, ensure_voice_cloning_supported
 from security.validation import (
     validate_voice_name,
@@ -27,7 +27,7 @@ MAX_VOICE_AUDIO_BYTES = 50 * 1024 * 1024
 def create_voices_routes(app: FastAPI, ctx):
     """Rutas de carga, creación, descarga y listado de voces."""
 
-    @app.post("/voice/load", dependencies=[Depends(require_api_key)])
+    @app.post("/voice/load", dependencies=[Depends(require_admin)])
     async def load_voice(req_body: LoadVoiceRequest):
         async with ctx.queue.inference_lock():
             await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
@@ -59,7 +59,7 @@ def create_voices_routes(app: FastAPI, ctx):
                 logger.debug(traceback.format_exc())
                 raise HTTPException(500, f"Error creando voz clonada: {str(e)}")
 
-    @app.post("/voice/create", dependencies=[Depends(require_api_key)])
+    @app.post("/voice/create", dependencies=[Depends(require_admin)])
     async def create_voice(
         voice_name: str = Form(...),
         text: str = Form(...),
@@ -99,7 +99,7 @@ def create_voices_routes(app: FastAPI, ctx):
                 logger.debug(traceback.format_exc())
                 raise HTTPException(500, f"Error creando voz clonada: {str(e)}")
 
-    @app.post("/voice/unload", dependencies=[Depends(require_api_key)])
+    @app.post("/voice/unload", dependencies=[Depends(require_admin)])
     async def unload_voice():
         async with ctx.queue.inference_lock():
             if not ctx.voices.unload_voice():
