@@ -22,7 +22,7 @@ from services.model_manager import ModelManager, GPUOutOfMemoryError, GPU_OOM_ME
 from services.voice_manager import VoiceManager
 from services.audio_service import AudioService
 from services.metrics_service import MetricsService
-from services.tts_service import TTSService
+from services.tts_service import TTSService, TTSValidationError
 from routes import (
     create_tts_routes,
     create_models_routes,
@@ -56,7 +56,7 @@ def build_context() -> AppContext:
     voices = VoiceManager(models)
     audio = AudioService(settings, queue)
     metrics = MetricsService(settings)
-    tts = TTSService(settings, models, voices, audio)
+    tts = TTSService(settings, queue, models, voices, audio, metrics)
     return AppContext(
         config=settings,
         queue=queue,
@@ -111,6 +111,15 @@ async def gpu_out_of_memory_handler(request: Request, exc: GPUOutOfMemoryError):
                 "request_id": request_id,
             }
         },
+    )
+
+
+@app.exception_handler(TTSValidationError)
+async def tts_validation_handler(request: Request, exc: TTSValidationError):
+    """Error de validación de una petición TTS (400, en formato estándar)."""
+    return JSONResponse(
+        status_code=400,
+        content={"error": {"code": exc.code, "message": exc.message}},
     )
 
 

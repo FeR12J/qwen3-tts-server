@@ -85,8 +85,10 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 
 | Nivel | Método | Endpoint | Descripción |
 |-------|--------|----------|-------------|
-| PUBLIC | GET | `/health` | Estado del servidor |
-| PUBLIC | GET | `/version` | Versión del servidor |
+| PUBLIC | GET | `/health` | Estado del servidor (rápido, no carga modelos) |
+| PUBLIC | GET | `/ready` | Listo para servir (`ready`, `tts_model_loaded`) |
+| PUBLIC | GET | `/system/status` | Estado detallado (GPU, TTS, Whisper) |
+| PUBLIC | GET | `/version` | Versión del servidor y de las librerías (diagnóstico) |
 | PUBLIC | GET | `/` | Estado del servidor (modelo activo, VRAM) |
 | PUBLIC | GET | `/models`, `/tts/audio/models`, `/model/status` | Listar modelos disponibles |
 | PUBLIC | GET | `/voices`, `/tts/audio/voices` | Listar voces disponibles |

@@ -34,6 +34,12 @@ class AudioService:
         sf.write(buffer, wav, sr, format="wav")
         return buffer.getvalue()
 
+    def encode_pcm(self, wav, sr) -> bytes:
+        """Codificar audio a PCM 16-bit little-endian (raw)."""
+        import numpy as np
+        pcm = np.clip(wav, -1.0, 1.0)
+        return (pcm * 32767).astype(np.int16).tobytes()
+
     def save(self, wav, sr, prefix: str) -> str:
         """Guardar audio WAV en disco y devolver la ruta."""
         dt = datetime.now().strftime("%Y%m%d_%H%M%S")

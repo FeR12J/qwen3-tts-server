@@ -126,7 +126,7 @@ class RuntimeSettings(BaseModel):
 
 # -- Objeto Settings único -------------------------------------------------
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 """Versión del servidor TTS (expuesta en /version)."""
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Esquemas Pydantic de la API."""
 
-from .tts import TTSRequest, TTSRequestOpenWebUI
+from .tts import TTSRequest
 from .models import LoadModelRequest
 from .voices import LoadVoiceRequest
 from .whisper import WhisperStatusResponse
@@ -10,7 +10,6 @@ from .errors import ErrorResponse
 
 __all__ = [
     "TTSRequest",
-    "TTSRequestOpenWebUI",
     "LoadModelRequest",
     "LoadVoiceRequest",
     "WhisperStatusResponse",

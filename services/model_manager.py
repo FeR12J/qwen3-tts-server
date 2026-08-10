@@ -49,9 +49,14 @@ class ModelInfo:
     """Información pública de un modelo cargado.
 
     No expone la instancia del modelo: solo ModelManager la manipula.
+    ``supported_languages`` / ``supported_speakers`` provienen del propio
+    modelo (None si no los expone): se usan para validar peticiones y para
+    documentación dinámica, sin listas duplicadas en el servidor.
     """
     model_id: str
     model_type: str
+    supported_languages: tuple | None = None
+    supported_speakers: tuple | None = None
 
 
 # Método de generación requerido para considerar el modelo válido (READY)
@@ -60,6 +65,25 @@ _GENERATION_METHODS = {
     "base": "generate_voice_clone",
 }
 _DEFAULT_GENERATION_METHOD = "generate_custom_voice"
+
+
+def _resolve_supported(model, names: tuple) -> tuple | None:
+    """Lista soportada expuesta por el modelo (si existe), o None.
+
+    Soporta atributos (``supported_languages``) y métodos del wrapper
+    (``get_supported_languages()``), como hace Qwen3TTSModel.
+    """
+    for name in names:
+        value = getattr(model, name, None)
+        if value is None:
+            continue
+        try:
+            value = value()
+        except TypeError:
+            pass
+        if value:
+            return tuple(str(item) for item in value)
+    return None
 
 
 def _resolve_model_type(model) -> str:
@@ -106,12 +130,22 @@ class ModelManager:
         entry = self._registry.get(self._active_id)
         if entry is None or entry["state"] != ModelState.READY.value:
             return None
-        return ModelInfo(self._active_id, entry["type"])
+        return ModelInfo(
+            self._active_id,
+            entry["type"],
+            entry.get("supported_languages"),
+            entry.get("supported_speakers"),
+        )
 
     async def get_loaded_models(self) -> list:
         """Modelos actualmente en memoria (READY)."""
         return [
-            ModelInfo(mid, e["type"])
+            ModelInfo(
+                mid,
+                e["type"],
+                e.get("supported_languages"),
+                e.get("supported_speakers"),
+            )
             for mid, e in self._registry.items()
             if e["state"] == ModelState.READY.value
         ]
@@ -137,6 +171,8 @@ class ModelManager:
             "dtype": entry.get("dtype"),
             "loaded_at": entry.get("loaded_at"),
             "error": entry.get("error"),
+            "supported_languages": entry.get("supported_languages"),
+            "supported_speakers": entry.get("supported_speakers"),
         }
 
     def is_loaded(self) -> bool:
@@ -154,6 +190,10 @@ class ModelManager:
         except OSError as e:
             logger.warning(f"Error leyendo directorio de modelos: {e}")
             return []
+
+    async def registry_ids(self) -> list:
+        """IDs de los modelos actualmente en el registro (cargados o no)."""
+        return list(self._registry.keys())
 
     # -- Ciclo de vida -----------------------------------------------------
 
@@ -175,7 +215,12 @@ class ModelManager:
         if entry is not None and entry["state"] == ModelState.READY.value:
             logger.info(f"Modelo {model_id} ya cargado en memoria")
             self._active_id = model_id
-            return ModelInfo(model_id, entry["type"])
+            return ModelInfo(
+                model_id,
+                entry["type"],
+                entry.get("supported_languages"),
+                entry.get("supported_speakers"),
+            )
 
         # Carga en curso para este modelo: esperarla (coalescing). El future
         # nunca se elimina mientras los esperadores puedan consultarlo: se
@@ -246,12 +291,23 @@ class ModelManager:
 
             entry["model"] = model
             entry["type"] = model_type
+            entry["supported_languages"] = _resolve_supported(
+                model, ("get_supported_languages", "supported_languages", "languages")
+            )
+            entry["supported_speakers"] = _resolve_supported(
+                model, ("get_supported_speakers", "supported_speakers", "speakers")
+            )
             entry["device"] = device
             entry["dtype"] = self._dtype_name(dtype)
             entry["loaded_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             entry["state"] = ModelState.READY.value
             logger.info(f"Modelo cargado correctamente. Tipo: {model_type}")
-            info = ModelInfo(model_id, model_type)
+            info = ModelInfo(
+                model_id,
+                model_type,
+                entry.get("supported_languages"),
+                entry.get("supported_speakers"),
+            )
 
         except asyncio.CancelledError:
             # Una carga cancelada (p.ej. shutdown o cliente desconectado) no
@@ -296,7 +352,12 @@ class ModelManager:
         entry = self._registry.get(model_id)
         if entry is not None and entry["state"] == ModelState.READY.value:
             self._active_id = model_id
-            return ModelInfo(model_id, entry["type"])
+            return ModelInfo(
+                model_id,
+                entry["type"],
+                entry.get("supported_languages"),
+                entry.get("supported_speakers"),
+            )
         return await self.load_model(model_id)
 
     async def unload_model(self, model_id: str) -> None:
@@ -356,6 +417,8 @@ class ModelManager:
             "loaded_at": None,
             "device": None,
             "dtype": None,
+            "supported_languages": None,
+            "supported_speakers": None,
         }
 
     @staticmethod

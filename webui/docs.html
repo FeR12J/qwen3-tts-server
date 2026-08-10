@@ -58,8 +58,10 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
 <table>
   <thead><tr><th>Método</th><th>Ruta</th><th>Descripción</th><th>Clave</th></tr></thead>
   <tbody>
-    <tr><td><span class="method m-get">GET</span></td><td><code>/health</code></td><td>Estado del servidor</td><td>No</td></tr>
-    <tr><td><span class="method m-get">GET</span></td><td><code>/version</code></td><td>Versión del servidor</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/health</code></td><td>Estado del servidor (rápido, no carga modelos)</td><td>No</td>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/ready</code></td><td>Listo para servir: <code>{ "ready": true, "tts_model_loaded": true }</code></td><td>No</td>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/system/status</code></td><td>Estado detallado: GPU (VRAM en MB), estado del modelo TTS y de Whisper</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/version</code></td><td>Versión del servidor y de las librerías (<code>qwen-tts</code>, <code>torch</code>, <code>transformers</code>, <code>cuda</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/</code></td><td>Estado del servidor (modelo actual, voice cloning, VRAM)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts</code></td><td>Generar audio WAV (texto, language, speaker, instruct)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/play</code></td><td>Generar y reproducir el audio en el equipo del servidor</td><td>Sí</td></tr>
