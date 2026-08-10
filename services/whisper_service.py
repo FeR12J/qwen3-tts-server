@@ -140,17 +140,28 @@ def transcribe(audio_bytes: bytes, language: Optional[str] = None) -> dict:
             raise ValueError(str(e))
 
     with torch.inference_mode():
-        if forced_decoder_ids is not None:
-            generated = _model.generate(input_features, forced_decoder_ids=forced_decoder_ids)
-            detected_language = forced_language
-        else:
-            generated = _model.generate(input_features)
-            full = _processor.tokenizer.decode(generated[0].tolist())
-            match = re.search(r"<\|([a-z]{2,3})\|>", full)
-            detected_language = match.group(1) if match else "auto"
+        try:
+            if forced_decoder_ids is not None:
+                generated = _model.generate(input_features, forced_decoder_ids=forced_decoder_ids)
+                detected_language = forced_language
+            else:
+                generated = _model.generate(input_features)
+                full = _processor.tokenizer.decode(generated[0].tolist())
+                match = re.search(r"<\|([a-z]{2,3})\|>", full)
+                detected_language = match.group(1) if match else "auto"
+        except torch.cuda.OutOfMemoryError as e:
+            # CUDA OOM: limpiar referencias temporales y cache, y elevar un
+            # error controlado para que la capa HTTP no filtre detalles.
+            from services.model_manager import GPUOutOfMemoryError
+            logger.error(f"CUDA OOM en transcripción Whisper: {e}")
+            input_features = None
+            generated = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise GPUOutOfMemoryError() from e
 
     text = _processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
-
     return {
         "text": text,
         "language": detected_language,

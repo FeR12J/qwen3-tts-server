@@ -9,6 +9,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from config.settings import CONFIG
 from security.auth import require_api_key
 from security.validation import validate_model_id
+from services.model_manager import GPUOutOfMemoryError
 from schemas.models import LoadModelRequest
 
 logger = logging.getLogger("tts")
@@ -19,7 +20,7 @@ def create_models_routes(app: FastAPI, ctx):
 
     @app.post("/model/load", dependencies=[Depends(require_api_key)])
     async def load_model_endpoint(req_body: LoadModelRequest):
-        async with ctx.queue.infer():
+        async with ctx.queue.model_lock():
             # Resetear voice cloning al cargar nuevo modelo
             ctx.voices.unload_voice()
 
@@ -41,6 +42,8 @@ def create_models_routes(app: FastAPI, ctx):
                 raise HTTPException(400, str(e))
             except HTTPException:
                 raise
+            except GPUOutOfMemoryError:
+                raise
             except Exception as e:
                 logger.error(f"Error cargando modelo: {e}")
                 logger.debug(traceback.format_exc())
@@ -48,7 +51,7 @@ def create_models_routes(app: FastAPI, ctx):
 
     @app.post("/model/unload", dependencies=[Depends(require_api_key)])
     async def unload_model_endpoint():
-        async with ctx.queue.infer():
+        async with ctx.queue.model_lock():
             info = await ctx.models.get_active_model()
             if info is None:
                 return {"status": "ok", "message": "No hay modelo cargado"}

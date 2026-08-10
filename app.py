@@ -4,19 +4,21 @@
 import os
 import asyncio
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from config.settings import CONFIG
 from utils.logging import setup_logging
 from utils.gpu import get_vram_available
 from services.config_service import load_runtime_config, apply_log_level
 from services.queue_service import QueueService
-from services.model_manager import ModelManager
+from services.model_manager import ModelManager, GPUOutOfMemoryError, GPU_OOM_MESSAGE
 from services.voice_manager import VoiceManager
 from services.audio_service import AudioService
 from services.metrics_service import MetricsService
@@ -99,6 +101,22 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(GPUOutOfMemoryError)
+async def gpu_out_of_memory_handler(request: Request, exc: GPUOutOfMemoryError):
+    """Respuesta controlada ante CUDA OOM: nunca se filtran detalles internos."""
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": {
+                "code": "GPU_OUT_OF_MEMORY",
+                "message": GPU_OOM_MESSAGE,
+                "request_id": request_id,
+            }
+        },
+    )
+
+
 async def startup_procedure(ctx: AppContext):
     """Procedimiento de inicialización del servidor."""
 
@@ -129,7 +147,7 @@ async def startup_procedure(ctx: AppContext):
         print(f"\nModelo seleccionado por defecto: {selected_model}")
 
         try:
-            async with ctx.queue.infer():
+            async with ctx.queue.model_lock():
                 info = await ctx.models.load_model(selected_model)
             print(f"   Tipo: {info.model_type}")
             print(f"   VRAM disponible: {get_vram_available()} GB")
@@ -160,7 +178,7 @@ async def startup_procedure(ctx: AppContext):
         print(f"\n🎤 Intentando clonar voz por defecto: {selected_voice}")
 
         try:
-            async with ctx.queue.infer():
+            async with ctx.queue.inference_lock():
                 await ctx.voices.load_voice(selected_voice)
             print(f"✅ Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
         except Exception as e:

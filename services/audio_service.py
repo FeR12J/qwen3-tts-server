@@ -69,7 +69,7 @@ class AudioService:
     async def play(self, audio_bytes: bytes, sr: int, timeout: int) -> dict:
         """Reproducir audio en este equipo, serializando con las reproducciones previas.
 
-        Debe ejecutarse dentro de queue.infer(). Devuelve info de la reproducción.
+        Debe ejecutarse dentro de queue.inference_lock(). Devuelve info de la reproducción.
         """
         player = self.pick_player()
         if not player:

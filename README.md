@@ -172,4 +172,4 @@ venv/bin/python app.py
 python3 app.py
 ```
 
-El servidor inicia en `http://0.0.0.0:8001` (host y puerto configurables en `config/settings.py`), carga el modelo por defecto y queda listo. La concurrencia está controlada por `QueueService` (semáforo global definido en `app.py`).
+El servidor inicia en `http://0.0.0.0:8001` (host y puerto configurables en `config/settings.py`), carga el modelo por defecto y queda listo. La concurrencia está controlada por `QueueService` con locks separados: `model_lock` serializa load/unload/switch y `inference_lock` controla la inferencia GPU (TTS, voice cloning, Whisper). Las operaciones de modelo esperan a la inferencia en curso y bloquean nuevas, evitando carreras del tipo unload + inference + load.

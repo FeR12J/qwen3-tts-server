@@ -2,9 +2,11 @@
 """Tests unitarios del ciclo de vida de ModelManager."""
 
 import asyncio
+import json
 import time
 
 import pytest
+import torch
 
 from config.settings import CONFIG
 from services import model_manager as mm
@@ -40,6 +42,27 @@ class BrokenQwen3TTS:
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
         raise RuntimeError("OOM simulado")
+
+
+class CUDAOOMQwen3TTS:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        raise torch.cuda.OutOfMemoryError(
+            "CUDA out of memory. Tried to allocate 512.00 MiB"
+        )
+
+
+class CUDAOOMAfterLoad(FakeModel):
+    def generate_voice_clone(self, **kwargs):
+        raise torch.cuda.OutOfMemoryError(
+            "CUDA out of memory. Tried to allocate 512.00 MiB"
+        )
+
+
+class FakeQwen3TTSWithCUDAOOM:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        return CUDAOOMAfterLoad()
 
 
 @pytest.fixture
@@ -234,3 +257,174 @@ def test_model_without_generation_method_is_error(models_dir, monkeypatch):
     status = _status(mgr)
     assert status["state"] == ModelState.ERROR.value
     assert "generate_voice_design" in status["error"]
+
+
+def test_concurrent_loads_same_model_load_once(models_dir, monkeypatch):
+    """Varias peticiones simultáneas del mismo modelo: solo una carga real."""
+    calls = []
+
+    class CountingTTS:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            calls.append(1)
+            time.sleep(0.2)
+            return FakeModel()
+
+    monkeypatch.setattr(mm, "Qwen3TTSModel", CountingTTS)
+    mgr = ModelManager()
+
+    async def scenario():
+        results = await asyncio.gather(
+            mgr.load_model("model-a"),
+            mgr.load_model("model-a"),
+            mgr.load_model("model-a"),
+        )
+        assert all(r.model_id == "model-a" for r in results)
+        assert len(calls) == 1  # solo una instancia creada en GPU
+
+    asyncio.run(scenario())
+
+    assert _status(mgr)["state"] == ModelState.READY.value
+    assert len(asyncio.run(mgr.get_loaded_models())) == 1
+
+
+def test_concurrent_loads_same_model_share_error(models_dir, monkeypatch):
+    """Si la carga en curso falla, todas las peticiones reciben el mismo error."""
+    monkeypatch.setattr(mm, "Qwen3TTSModel", BrokenQwen3TTS)
+    mgr = ModelManager()
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match="OOM simulado"):
+            await asyncio.gather(
+                mgr.load_model("model-a"),
+                mgr.load_model("model-a"),
+            )
+
+    asyncio.run(scenario())
+
+    status = _status(mgr)
+    assert status["state"] == ModelState.ERROR.value
+    assert "OOM" in status["error"]
+
+
+def test_retry_after_failed_load_allowed(models_dir, monkeypatch):
+    """Tras un ERROR, una nueva carga del mismo modelo se reintenta."""
+    failures = [True]
+
+    class FlakyTTS:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            if failures[0]:
+                failures[0] = False
+                raise RuntimeError("fallo transitorio")
+            return FakeModel()
+
+    monkeypatch.setattr(mm, "Qwen3TTSModel", FlakyTTS)
+    mgr = ModelManager()
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(mgr.load_model("model-a"))
+
+    info = asyncio.run(mgr.load_model("model-a"))
+    assert info.model_id == "model-a"
+    assert _status(mgr)["state"] == ModelState.READY.value
+
+
+# -- Recuperación ante CUDA OOM -------------------------------------------
+
+
+def test_cuda_oom_during_load_raises_controlled_error(models_dir, monkeypatch):
+    """Un CUDA OOM al cargar eleva GPUOutOfMemoryError sin filtrar detalles."""
+    monkeypatch.setattr(mm, "Qwen3TTSModel", CUDAOOMQwen3TTS)
+    mgr = ModelManager()
+
+    with pytest.raises(mm.GPUOutOfMemoryError) as ei:
+        asyncio.run(mgr.load_model("model-a"))
+
+    assert str(ei.value) == mm.GPU_OOM_MESSAGE
+    assert mm.GPU_OOM_MESSAGE == "Not enough GPU memory to process this request."
+    assert "CUDA out of memory" not in str(ei.value)
+
+
+def test_cuda_oom_during_load_marks_error_and_frees_cache(models_dir, monkeypatch):
+    """Tras el OOM: estado ERROR, mensaje público y cache de CUDA liberada."""
+    empties = []
+    monkeypatch.setattr(mm, "Qwen3TTSModel", CUDAOOMQwen3TTS)
+    monkeypatch.setattr(mm.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(mm.torch.cuda, "empty_cache", lambda: empties.append(1))
+    mgr = ModelManager()
+
+    with pytest.raises(mm.GPUOutOfMemoryError):
+        asyncio.run(mgr.load_model("model-a"))
+
+    assert empties == [1]
+    status = _status(mgr)
+    assert status["state"] == ModelState.ERROR.value
+    assert status["error"] == mm.GPU_OOM_MESSAGE
+
+
+def test_concurrent_loads_same_model_share_cuda_oom(models_dir, monkeypatch):
+    """Concurrentes: si la carga en curso muere por OOM, todas reciben el error controlado."""
+    monkeypatch.setattr(mm, "Qwen3TTSModel", CUDAOOMQwen3TTS)
+    mgr = ModelManager()
+
+    async def scenario():
+        with pytest.raises(mm.GPUOutOfMemoryError):
+            await asyncio.gather(
+                mgr.load_model("model-a"),
+                mgr.load_model("model-a"),
+            )
+
+    asyncio.run(scenario())
+
+    status = _status(mgr)
+    assert status["state"] == ModelState.ERROR.value
+    assert status["error"] == mm.GPU_OOM_MESSAGE
+
+
+def test_cuda_oom_during_inference_recovers(models_dir, monkeypatch):
+    """OOM en inferencia: estado ERROR, cache liberada y sin estado inconsistente."""
+    empties = []
+    monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTSWithCUDAOOM)
+    monkeypatch.setattr(mm.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(mm.torch.cuda, "empty_cache", lambda: empties.append(1))
+    mgr = ModelManager()
+
+    info = asyncio.run(mgr.load_model("model-a"))
+    assert info.model_id == "model-a"
+    assert mgr.is_loaded()
+
+    with pytest.raises(mm.GPUOutOfMemoryError):
+        asyncio.run(mgr.generate_voice_clone(text="hola", language="es"))
+
+    assert empties == [1]
+    status = _status(mgr)
+    assert status["state"] == ModelState.ERROR.value
+    assert status["error"] == mm.GPU_OOM_MESSAGE
+    assert asyncio.run(mgr.get_active_model()) is None
+
+
+def test_gpu_oom_http_response_shape():
+    """El handler HTTP devuelve el JSON controlado (503) con request_id."""
+    from fastapi import Request
+    from app import gpu_out_of_memory_handler
+
+    async def run():
+        scope = {
+            "type": "http",
+            "headers": [(b"x-request-id", b"abc123")],
+        }
+        resp = await gpu_out_of_memory_handler(Request(scope), mm.GPUOutOfMemoryError())
+        return resp
+
+    resp = asyncio.run(run())
+
+    assert resp.status_code == 503
+    body = json.loads(resp.body)
+    assert body == {
+        "error": {
+            "code": "GPU_OUT_OF_MEMORY",
+            "message": "Not enough GPU memory to process this request.",
+            "request_id": "abc123",
+        }
+    }

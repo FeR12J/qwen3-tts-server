@@ -29,6 +29,21 @@ class ModelState(str, Enum):
     ERROR = "error"
 
 
+# Mensaje público: nunca se exponen detalles internos al cliente
+GPU_OOM_MESSAGE = "Not enough GPU memory to process this request."
+
+
+class GPUOutOfMemoryError(RuntimeError):
+    """Error controlado de memoria de GPU (CUDA OOM).
+
+    Se eleva tras capturar torch.cuda.OutOfMemoryError para que la capa HTTP
+    pueda devolver una respuesta controlada sin filtrar detalles internos.
+    """
+
+    def __init__(self):
+        super().__init__(GPU_OOM_MESSAGE)
+
+
 @dataclass(frozen=True)
 class ModelInfo:
     """Información pública de un modelo cargado.
@@ -75,6 +90,11 @@ class ModelManager:
         # model_id -> {"model", "type", "state", "error", "loaded_at", "device", "dtype"}
         self._registry: dict = {}
         self._active_id = None
+        # Cargas en curso: model_id -> Future. Coalesce peticiones simultáneas
+        # del mismo modelo para no crear nunca dos instancias en GPU. Cada
+        # future se resuelve con (ok, ModelInfo|None, Exception|None). La
+        # entrada queda hasta la siguiente carga del mismo modelo.
+        self._pending_loads: dict = {}
 
     # -- Consultas ---------------------------------------------------------
 
@@ -139,6 +159,10 @@ class ModelManager:
 
         Estados: UNLOADED -> LOADING -> READY (o ERROR si falla).
         Si ya está READY en memoria solo lo activa (sin cargas duplicadas).
+
+        Si el modelo ya se está cargando (peticiones simultáneas), espera a
+        que termine esa carga: nunca se crean dos instancias del mismo modelo
+        en GPU. Al terminar devuelve el mismo resultado o propaga el error.
         """
         model_id = (model_id or "").strip()
         if not model_id:
@@ -150,11 +174,25 @@ class ModelManager:
             self._active_id = model_id
             return ModelInfo(model_id, entry["type"])
 
+        # Carga en curso para este modelo: esperarla (coalescing). El future
+        # nunca se elimina mientras los esperadores puedan consultarlo: se
+        # resuelve con (ok, ModelInfo|None, Exception|None) y la entrada se
+        # reemplaza en la siguiente carga del mismo modelo.
+        pending = self._pending_loads.get(model_id)
+        if pending is not None and not pending.done():
+            logger.info(f"Modelo {model_id} ya se está cargando; esperando...")
+            ok, result, error = await pending
+            if ok:
+                self._active_id = model_id
+                return result
+            raise error
+
         model_path = os.path.join(CONFIG["local_models_dir"], model_id)
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Modelo '{model_id}' no existe en {model_path}")
 
         # Preparar la entrada y marcarla como LOADING
+        previous_error = entry.get("error") if entry is not None else None
         if entry is None:
             entry = self._new_entry()
             self._registry[model_id] = entry
@@ -170,6 +208,11 @@ class ModelManager:
             dtype=None,
         )
         self._active_id = model_id
+
+        # Registrar la carga en curso ANTES del primer await (reemplaza una
+        # entrada anterior ya resuelta: success/error del intento previo)
+        future = asyncio.get_running_loop().create_future()
+        self._pending_loads[model_id] = future
 
         # Liberar VRAM de otros modelos (nunca del que se está cargando)
         self._free_all(except_id=model_id)
@@ -205,13 +248,40 @@ class ModelManager:
             entry["loaded_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             entry["state"] = ModelState.READY.value
             logger.info(f"Modelo cargado correctamente. Tipo: {model_type}")
-            return ModelInfo(model_id, model_type)
+            info = ModelInfo(model_id, model_type)
+
+        except asyncio.CancelledError:
+            # Una carga cancelada (p.ej. shutdown o cliente desconectado) no
+            # puede dejar el estado atascado en LOADING: si era un reintento,
+            # se restaura el error anterior; si no, queda "carga cancelada".
+            logger.warning(f"Carga del modelo {model_id} cancelada")
+            cancel_error = previous_error or "Carga cancelada"
+            entry["state"] = ModelState.ERROR.value
+            entry["error"] = cancel_error
+            if not future.done():
+                future.set_result((False, None, RuntimeError(cancel_error)))
+            raise
+
+        except torch.cuda.OutOfMemoryError as e:
+            logger.error(f"CUDA OOM cargando modelo {model_id}: {e}")
+            entry["state"] = ModelState.ERROR.value
+            entry["error"] = GPU_OOM_MESSAGE
+            if not future.done():
+                future.set_result((False, None, GPUOutOfMemoryError()))
+            self._free_cache()
+            raise GPUOutOfMemoryError() from e
 
         except Exception as e:
             logger.error(f"Error cargando modelo {model_id}: {e}")
             entry["state"] = ModelState.ERROR.value
             entry["error"] = str(e)
-            raise
+            if not future.done():
+                future.set_result((False, None, e))
+            raise  # el originador propaga el error original
+
+        if not future.done():
+            future.set_result((True, info, None))
+        return info
 
     async def switch_model(self, model_id: str) -> ModelInfo:
         """Activar otro modelo.
@@ -297,6 +367,17 @@ class ModelManager:
         entry["state"] = ModelState.GENERATING.value
         try:
             result = await asyncio.to_thread(getattr(model, method_name), **kwargs)
+        except torch.cuda.OutOfMemoryError as e:
+            # CUDA OOM: estado controlado, limpiar referencias y cache, y
+            # elevar un error tipado que la capa HTTP traduce sin filtrar
+            # detalles internos.
+            logger.error(f"CUDA OOM en inferencia ({method_name})")
+            result = None
+            kwargs = None
+            entry["state"] = ModelState.ERROR.value
+            entry["error"] = GPU_OOM_MESSAGE
+            self._free_cache()
+            raise GPUOutOfMemoryError() from e
         except Exception as e:
             logger.error(f"Error en inferencia ({method_name}): {e}")
             entry["state"] = ModelState.ERROR.value
@@ -305,15 +386,20 @@ class ModelManager:
         entry["state"] = ModelState.READY.value
         return result
 
+    @staticmethod
+    def _free_cache():
+        """Liberar caché de CUDA tras un fallo de GPU (OOM)."""
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def _free_entry(self, entry: dict):
         """Eliminar referencias de un modelo y liberar VRAM."""
         try:
             entry.pop("model", None)
         except Exception as e:
             logger.warning(f"Error liberando modelo: {e}")
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
+        self._free_cache()
 
     def _free_all(self, except_id=None):
         """Liberar VRAM de todos los modelos salvo except_id."""

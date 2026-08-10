@@ -14,6 +14,7 @@ from security.validation import (
     validate_audio_size,
 )
 from schemas.voices import LoadVoiceRequest
+from services.model_manager import GPUOutOfMemoryError
 
 logger = logging.getLogger("tts")
 
@@ -26,7 +27,7 @@ def create_voices_routes(app: FastAPI, ctx):
 
     @app.post("/voice/load", dependencies=[Depends(require_api_key)])
     async def load_voice(req_body: LoadVoiceRequest):
-        async with ctx.queue.infer():
+        async with ctx.queue.inference_lock():
             await require_model_loaded(ctx.models)
             voice_name = req_body.voice_name.strip()
             validate_voice_name(voice_name)
@@ -48,6 +49,8 @@ def create_voices_routes(app: FastAPI, ctx):
                 raise HTTPException(400, str(e))
             except HTTPException:
                 raise
+            except GPUOutOfMemoryError:
+                raise
             except Exception as e:
                 logger.error(f"Error creando voz clonada: {e}")
                 logger.debug(traceback.format_exc())
@@ -60,7 +63,7 @@ def create_voices_routes(app: FastAPI, ctx):
         audio: UploadFile = File(...),
     ):
         """Crear una voz subiendo un WAV y su transcripción. La guarda y la clona."""
-        async with ctx.queue.infer():
+        async with ctx.queue.inference_lock():
             await require_model_loaded(ctx.models)
 
             voice_name = voice_name.strip()
@@ -85,6 +88,8 @@ def create_voices_routes(app: FastAPI, ctx):
 
             except HTTPException:
                 raise
+            except GPUOutOfMemoryError:
+                raise
             except Exception as e:
                 logger.error(f"Error creando voz clonada: {e}")
                 logger.debug(traceback.format_exc())
@@ -92,7 +97,7 @@ def create_voices_routes(app: FastAPI, ctx):
 
     @app.post("/voice/unload", dependencies=[Depends(require_api_key)])
     async def unload_voice():
-        async with ctx.queue.infer():
+        async with ctx.queue.inference_lock():
             if not ctx.voices.unload_voice():
                 return {
                     "status": "ok",
