@@ -5,8 +5,7 @@ import asyncio
 
 import pytest
 
-from config import defaults
-from config.settings import CONFIG
+from config.settings import settings
 from services import config_service
 from services import gpu_management as gm
 from services import model_manager as mm
@@ -39,7 +38,7 @@ class FakeVoices:
 def models_dir(tmp_path, monkeypatch):
     models_dir = tmp_path / "models"
     (models_dir / "model-a").mkdir(parents=True)
-    monkeypatch.setitem(CONFIG, "local_models_dir", str(models_dir))
+    monkeypatch.setattr(settings.paths, "models_dir", str(models_dir))
     return models_dir
 
 
@@ -50,8 +49,8 @@ def whisper_unloaded(monkeypatch):
 
 
 def test_whisper_management_defaults_enabled():
-    assert defaults.DEFAULTS["unload_tts_for_whisper"] is True
-    assert defaults.DEFAULTS["unload_whisper_for_tts"] is True
+    assert settings.runtime.unload_tts_for_whisper is True
+    assert settings.runtime.unload_whisper_for_tts is True
 
 
 def test_unload_if_loaded_noop_when_not_loaded(whisper_unloaded):
@@ -71,8 +70,8 @@ def test_tts_unloaded_before_whisper_and_restored_after(
     models_dir, monkeypatch, whisper_unloaded
 ):
     monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
-    monkeypatch.setitem(config_service._runtime, "unload_tts_for_whisper", True)
-    monkeypatch.setitem(config_service._runtime, "unload_whisper_for_tts", True)
+    monkeypatch.setattr(settings.runtime, "unload_tts_for_whisper", True)
+    monkeypatch.setattr(settings.runtime, "unload_whisper_for_tts", True)
     voices = FakeVoices()
     mgr = ModelManager()
 
@@ -91,7 +90,7 @@ def test_tts_unloaded_before_whisper_and_restored_after(
 
 
 def test_whisper_unloaded_before_tts(models_dir, monkeypatch, whisper_unloaded):
-    monkeypatch.setitem(config_service._runtime, "unload_whisper_for_tts", True)
+    monkeypatch.setattr(settings.runtime, "unload_whisper_for_tts", True)
     monkeypatch.setattr(ws, "_model", object())
     monkeypatch.setattr(ws, "_processor", object())
     mgr = ModelManager()
@@ -106,8 +105,8 @@ def test_both_models_kept_when_flags_disabled(
 ):
     # GPUs grandes: ambos modelos pueden permanecer cargados
     monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
-    monkeypatch.setitem(config_service._runtime, "unload_tts_for_whisper", False)
-    monkeypatch.setitem(config_service._runtime, "unload_whisper_for_tts", False)
+    monkeypatch.setattr(settings.runtime, "unload_tts_for_whisper", False)
+    monkeypatch.setattr(settings.runtime, "unload_whisper_for_tts", False)
     monkeypatch.setattr(ws, "_model", object())
     monkeypatch.setattr(ws, "_processor", object())
     voices = FakeVoices()

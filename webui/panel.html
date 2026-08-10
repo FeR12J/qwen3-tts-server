@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qwen3-TTS · Panel</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>TTS</text></svg>">
 <style>
 :root {
   --bg:#0a0c12;
@@ -204,7 +204,6 @@ tr:hover td { background:rgba(255,255,255,.02); }
 #toast.show { opacity:1; transform:translate(-50%,0); }
 #toast.ok { background:#0e2a1e; border:1px solid rgba(52,211,153,.45); color:#a7f3d0; box-shadow:0 10px 30px rgba(0,0,0,.4); }
 #toast.err { background:#321018; border:1px solid rgba(248,113,113,.45); color:#fecaca; box-shadow:0 10px 30px rgba(0,0,0,.4); }
-#toast .tic { font-size:16px; }
 
 /* ---------- Key box ---------- */
 #newKeyBox {
@@ -348,7 +347,7 @@ footer a:hover { text-decoration:underline; }
   </section>
 
   <footer>
-    <a href="/webui/docs" target="_blank">Documentación de la API</a> · Configuración y claves API en el botón <b>⚙</b> de arriba
+    <a href="/webui/docs" target="_blank">Documentación de la API</a> · Configuración y claves API en el botón <b></b> de arriba
   </footer>
 
 </main>
@@ -401,6 +400,16 @@ footer a:hover { text-decoration:underline; }
               <option value="cpu">CPU</option>
             </select>
             <div class="hint" id="cfgDeviceHint">Se aplica al cargar el modelo.</div>
+          </div>
+          <div>
+            <label for="cfgDtype">Precisión del modelo</label>
+            <select id="cfgDtype">
+              <option value="auto">Auto (bfloat16 en GPU, float32 en CPU)</option>
+              <option value="bfloat16">bfloat16</option>
+              <option value="float16">float16</option>
+              <option value="float32">float32</option>
+            </select>
+            <div class="hint">Se aplica al cargar el modelo.</div>
           </div>
           <div>
             <label for="cfgLogLevel">Nivel de logging</label>
@@ -478,7 +487,7 @@ let apiKey = localStorage.getItem('tts_apikey') || '';
 
 function toast(msg, ok = true) {
   const t = $('toast');
-  t.innerHTML = '<span class="tic">' + (ok ? '✅' : '⚠️') + '</span><span>' + msg.replace(/</g, '&lt;') + '</span>';
+  t.innerHTML = '<span>' + msg.replace(/</g, '&lt;') + '</span>';
   t.className = 'show ' + (ok ? 'ok' : 'err');
   clearTimeout(t._tm);
   t._tm = setTimeout(() => t.className = '', 3800);
@@ -496,7 +505,7 @@ async function api(url, opts = {}) {
   if (!res.ok) {
     let msg = res.status + ' ' + res.statusText;
     try { const j = await res.json(); msg = j.detail || msg; } catch (e) {}
-    if (res.status === 401) msg = 'Se requiere una clave API válida (configúrala en el botón ⚙)';
+    if (res.status === 401) msg = 'Se requiere una clave API válida (configúrala en el botón )';
     throw new Error(msg);
   }
   return res;
@@ -682,6 +691,7 @@ async function loadConfig() {
     $('cfgVoice').value = c.def_voice;
     $('cfgInstruct').value = c.def_instruct || '';
     $('cfgLogLevel').value = c.log_level;
+    $('cfgDtype').value = c.dtype || 'auto';
     $('cfgLogRequests').value = String(c.log_requests);
     $('cfgUnloadTtsForWhisper').value = String(c.unload_tts_for_whisper);
     $('cfgUnloadWhisperForTts').value = String(c.unload_whisper_for_tts);
@@ -698,6 +708,7 @@ async function saveConfig() {
     def_voice: $('cfgVoice').value,
     def_instruct: $('cfgInstruct').value,
     log_level: $('cfgLogLevel').value,
+    dtype: $('cfgDtype').value,
     log_requests: $('cfgLogRequests').value === 'true',
     unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',
     unload_whisper_for_tts: $('cfgUnloadWhisperForTts').value === 'true',
@@ -752,7 +763,7 @@ async function createKey() {
     const d = await apiJson('/webui/api/apikeys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) });
     const box = $('newKeyBox');
     box.style.display = 'block';
-    box.innerHTML = '🔑 Clave creada (solo se muestra una vez). Cópiala ahora:<br>' + d.key +
+    box.innerHTML = ' Clave creada (solo se muestra una vez). Cópiala ahora:<br>' + d.key +
       ' <button class="btn-sm" onclick="navigator.clipboard.writeText(\'' + d.key + '\'); toast(\'Copiada\')">Copiar</button>';
     apiKey = d.key; localStorage.setItem('tts_apikey', d.key);
     $('activeKey').value = d.key;

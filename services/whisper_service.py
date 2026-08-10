@@ -15,7 +15,7 @@ from typing import Optional
 import numpy as np
 import torch
 
-from config.settings import CONFIG
+from config.settings import settings
 from services.config_service import resolve_device
 from utils.gpu import get_dtype
 
@@ -46,8 +46,8 @@ def _ensure_loaded():
 
     from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-    model_name = CONFIG.get("whisper_model", "whisper-large-v3")
-    model_path = os.path.join(CONFIG["local_models_dir"], model_name)
+    model_name = settings.whisper.whisper_model
+    model_path = os.path.join(settings.paths.models_dir, model_name)
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Modelo Whisper no encontrado en {model_path}")
 

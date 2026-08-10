@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from config.settings import CONFIG
+from config.settings import settings
 from utils.logging import setup_logging
 from utils.gpu import get_vram_available
 from services.config_service import load_runtime_config, apply_log_level
@@ -51,14 +51,14 @@ class AppContext:
 
 def build_context() -> AppContext:
     """Construir e interconectar todos los servicios."""
-    queue = QueueService()
+    queue = QueueService(settings.queue.max_parallel_inference)
     models = ModelManager()
     voices = VoiceManager(models)
-    audio = AudioService(CONFIG, queue)
-    metrics = MetricsService(CONFIG)
-    tts = TTSService(CONFIG, models, voices, audio)
+    audio = AudioService(settings, queue)
+    metrics = MetricsService(settings)
+    tts = TTSService(settings, models, voices, audio)
     return AppContext(
-        config=CONFIG,
+        config=settings,
         queue=queue,
         models=models,
         voices=voices,
@@ -94,10 +94,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Qwen3-TTS API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    **settings.cors.model_dump(),
 )
 
 
@@ -125,24 +122,24 @@ async def startup_procedure(ctx: AppContext):
     print("." * 60)
 
     # Limpiar audios antiguos
-    ctx.audio.cleanup_old(CONFIG["audios_max_age_days"])
+    ctx.audio.cleanup_old(settings.limits.audios_max_age_days)
 
     # Modelos locales
     local_models = ctx.models.list_local_models()
 
-    print(f"\n📦 Modelos locales disponibles ({len(local_models)}):")
+    print(f"\n Modelos locales disponibles ({len(local_models)}):")
     for i, m in enumerate(local_models, 1):
         print(f"   {i}. {m}")
 
     # Seleccionar modelo por defecto (configurable, fallback al primero disponible)
     if len(local_models) > 0:
         selected_model = None
-        if CONFIG.get("default_model") and CONFIG["default_model"] in local_models:
-            selected_model = CONFIG["default_model"]
+        if settings.model.default_model and settings.model.default_model in local_models:
+            selected_model = settings.model.default_model
         else:
             selected_model = local_models[0]
-            if CONFIG.get("default_model"):
-                print(f"\n⚠️  Modelo por defecto '{CONFIG['default_model']}' no encontrado, usando '{selected_model}'")
+            if settings.model.default_model:
+                print(f"\nModelo por defecto '{settings.model.default_model}' no encontrado, usando '{selected_model}'")
 
         print(f"\nModelo seleccionado por defecto: {selected_model}")
 
@@ -168,29 +165,29 @@ async def startup_procedure(ctx: AppContext):
     if len(local_models) > 0 and len(local_voices) >= 1 and ctx.models.is_loaded():
 
         selected_voice = None
-        if CONFIG.get("default_voice") and any(
-            v["name"] == CONFIG["default_voice"] for v in local_voices
+        if settings.model.default_voice and any(
+            v["name"] == settings.model.default_voice for v in local_voices
         ):
-            selected_voice = CONFIG["default_voice"]
+            selected_voice = settings.model.default_voice
         else:
             selected_voice = local_voices[0]["name"]
 
-        print(f"\n🎤 Intentando clonar voz por defecto: {selected_voice}")
+        print(f"\nIntentando clonar voz por defecto: {selected_voice}")
 
         try:
             async with ctx.queue.inference_lock():
                 await ctx.voices.load_voice(selected_voice)
-            print(f"✅ Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
+            print(f"Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
         except Exception as e:
             print(f"Error creando voz clonada (continuar sin voice cloning): {e}")
 
     print("\n" + "." * 30)
     print("Escuchando...")
     print("." * 30 + "\n")
-    print(f"INFO:     WebUI disponible en: http://localhost:{CONFIG['port']}/webui")
-    print(f"INFO:     Documentación de la API: http://localhost:{CONFIG['port']}/webui/docs\n")
+    print(f"INFO:     WebUI disponible en: http://localhost:{settings.server.port}/webui")
+    print(f"INFO:     Documentación de la API: http://localhost:{settings.server.port}/webui/docs\n")
 
 
 # Punto de entrada principal
 if __name__ == "__main__":
-    uvicorn.run(app, host=CONFIG["host"], port=CONFIG["port"])
+    uvicorn.run(app, host=settings.server.host, port=settings.server.port)

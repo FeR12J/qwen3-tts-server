@@ -15,7 +15,8 @@ logger = logging.getLogger("tts")
 class MetricsService:
     """Contadores de actividad y métricas de recursos."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config):
+        """config: config.settings.Settings (objeto Settings único)."""
         self._config = config
         self._request_count = 0
         self._last_request = None
@@ -24,12 +25,12 @@ class MetricsService:
         """Registrar una petición (contador + archivo de logs)."""
         self._request_count += 1
         self._last_request = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self._config.get("log_file"):
+        if self._config.logging.log_file:
             _log_request(
                 req,
                 text,
-                self._config["log_file"],
-                self._config.get("log_max_bytes", 5 * 1024 * 1024),
+                self._config.logging.log_file,
+                self._config.logging.log_max_bytes,
             )
 
     def vram_available_gb(self) -> float:

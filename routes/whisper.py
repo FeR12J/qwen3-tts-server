@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
-from config.settings import CONFIG
+from config.settings import settings
 from security.auth import require_api_key
 from security.validation import validate_audio_size
 from services import whisper_service
@@ -29,7 +29,7 @@ def create_whisper_routes(app: FastAPI, ctx):
         return {
             "status": "ok",
             "model_loaded": whisper_service.is_loaded(),
-            "model": CONFIG.get("whisper_model", "whisper-large-v3"),
+            "model": settings.whisper.whisper_model,
             "device": whisper_service.get_device(),
         }
 

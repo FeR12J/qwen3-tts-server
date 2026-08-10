@@ -8,7 +8,7 @@ import time
 import pytest
 import torch
 
-from config.settings import CONFIG
+from config.settings import settings
 from services import model_manager as mm
 from services.model_manager import ModelManager, ModelState
 
@@ -70,7 +70,7 @@ def models_dir(tmp_path, monkeypatch):
     models_dir = tmp_path / "models"
     (models_dir / "model-a").mkdir(parents=True)
     (models_dir / "model-b").mkdir()
-    monkeypatch.setitem(CONFIG, "local_models_dir", str(models_dir))
+    monkeypatch.setattr(settings.paths, "models_dir", str(models_dir))
     return models_dir
 
 

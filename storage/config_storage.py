@@ -5,11 +5,11 @@ import os
 import json
 import logging
 
-from utils.paths import DATA_DIR
+from config.settings import settings
 
 logger = logging.getLogger("tts")
 
-RUNTIME_FILE = os.path.join(DATA_DIR, "runtime.json")
+RUNTIME_FILE = os.path.join(settings.paths.data_dir, "runtime.json")
 
 
 def load_runtime_file() -> dict:
@@ -28,7 +28,7 @@ def load_runtime_file() -> dict:
 def save_runtime_file(runtime: dict):
     """Persistir la configuración en disco."""
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(settings.paths.data_dir, exist_ok=True)
         with open(RUNTIME_FILE, "w", encoding="utf-8") as f:
             json.dump(runtime, f, indent=2, ensure_ascii=False)
     except Exception as e:

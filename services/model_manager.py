@@ -12,7 +12,7 @@ from enum import Enum
 import torch
 from qwen_tts import Qwen3TTSModel
 
-from config.settings import CONFIG
+from config.settings import settings
 from services.config_service import resolve_device
 from utils.gpu import get_dtype
 
@@ -148,8 +148,8 @@ class ModelManager:
         """Modelos disponibles en el directorio local (no requieren carga)."""
         try:
             return sorted(
-                d for d in os.listdir(CONFIG["local_models_dir"])
-                if os.path.isdir(os.path.join(CONFIG["local_models_dir"], d))
+                d for d in os.listdir(settings.paths.models_dir)
+                if os.path.isdir(os.path.join(settings.paths.models_dir, d))
             )
         except OSError as e:
             logger.warning(f"Error leyendo directorio de modelos: {e}")
@@ -190,7 +190,7 @@ class ModelManager:
                 return result
             raise error
 
-        model_path = os.path.join(CONFIG["local_models_dir"], model_id)
+        model_path = os.path.join(settings.paths.models_dir, model_id)
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Modelo '{model_id}' no existe en {model_path}")
 

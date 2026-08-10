@@ -6,7 +6,7 @@ import traceback
 
 from fastapi import FastAPI, Depends, HTTPException
 
-from config.settings import CONFIG
+from config.settings import settings
 from security.auth import require_api_key
 from security.validation import validate_model_id
 from services.gpu_management import prepare_for_tts
@@ -85,7 +85,7 @@ def create_models_routes(app: FastAPI, ctx):
             return {
                 "available_models": ctx.models.list_local_models(),
                 "current_model": active.model_id if active else None,
-                "models_dir": CONFIG["local_models_dir"],
+                "models_dir": settings.paths.models_dir,
             }
         except Exception as e:
             logger.error(f"Error listando modelos: {e}")

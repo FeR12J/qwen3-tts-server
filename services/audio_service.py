@@ -23,7 +23,8 @@ PLAYERS = [p for p in ["mpv", "ffplay", "paplay", "aplay", "play"] if shutil.whi
 class AudioService:
     """Operaciones de audio del servidor."""
 
-    def __init__(self, config: dict, queue):
+    def __init__(self, config, queue):
+        """config: config.settings.Settings (objeto Settings único)."""
         self._config = config
         self._queue = queue
 
@@ -36,7 +37,7 @@ class AudioService:
     def save(self, wav, sr, prefix: str) -> str:
         """Guardar audio WAV en disco y devolver la ruta."""
         dt = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = f"{self._config['audios_dir']}/{prefix}_{dt}.wav"
+        path = f"{self._config.paths.audios_dir}/{prefix}_{dt}.wav"
         sf.write(path, wav, sr)
         logger.info(f"Audio guardado: {path}")
         return path
@@ -48,8 +49,8 @@ class AudioService:
         cutoff = time.time() - max_age_days * 86400
         removed = 0
         try:
-            for fname in os.listdir(self._config["audios_dir"]):
-                path = os.path.join(self._config["audios_dir"], fname)
+            for fname in os.listdir(self._config.paths.audios_dir):
+                path = os.path.join(self._config.paths.audios_dir, fname)
                 try:
                     if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
                         os.remove(path)
@@ -57,9 +58,9 @@ class AudioService:
                 except OSError as e:
                     logger.warning(f"No se pudo eliminar {path}: {e}")
         except OSError as e:
-            logger.warning(f"Error leyendo directorio de audios {self._config['audios_dir']}: {e}")
+            logger.warning(f"Error leyendo directorio de audios {self._config.paths.audios_dir}: {e}")
         if removed:
-            logger.info(f"Limpieza: {removed} audio(s) antiguo(s) eliminado(s) de {self._config['audios_dir']}")
+            logger.info(f"Limpieza: {removed} audio(s) antiguo(s) eliminado(s) de {self._config.paths.audios_dir}")
         return removed
 
     def pick_player(self):

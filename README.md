@@ -7,9 +7,8 @@ Servidor FastAPI modular para generación de texto a voz con modelos Qwen3-TTS l
 ```
 qwen3-tts-server/
 ├── app.py               # Composición de la aplicación y arranque
-├── config/              # Configuración estática y defaults
-│   ├── settings.py      # CONFIG (host, puerto, directorios, modelo/voz por defecto)
-│   └── defaults.py      # Defaults de configuración en tiempo de ejecución
+├── config/              # Configuración centralizada (Pydantic Settings)
+│   └── settings.py      # settings: grupos server/paths/model/whisper/cors/limits/queue/auth/logging/runtime
 ├── schemas/             # Esquemas Pydantic por dominio
 │   ├── tts.py           # TTSRequest, TTSRequestOpenWebUI
 │   ├── whisper.py       # WhisperStatusResponse
@@ -60,7 +59,7 @@ qwen3-tts-server/
 └── requirements-dev.txt
 ```
 
-Flujo de una petición: HTTP → Autenticación (`security/auth.py`) → Validación de esquema (`schemas/`) → Validación de entrada (`security/validation.py`) → Servicio (`services/`) → `ModelManager`/Whisper → `AudioService` → Respuesta. Las rutas HTTP no contienen lógica de inferencia; todo el acceso al modelo pasa por los servicios.
+Flujo de una petición: HTTP  Autenticación (`security/auth.py`)  Validación de esquema (`schemas/`)  Validación de entrada (`security/validation.py`)  Servicio (`services/`)  `ModelManager`/Whisper  `AudioService`  Respuesta. Las rutas HTTP no contienen lógica de inferencia; todo el acceso al modelo pasa por los servicios.
 
 ## Modelos soportados
 
@@ -110,7 +109,7 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 | POST | `/webui/api/apikeys/{id}/toggle` | Activar/desactivar clave API | No |
 | DELETE | `/webui/api/apikeys/{id}` | Eliminar clave API | No |
 
-Cuando la exigencia de clave API está activada (panel → Claves API), los endpoints de servicio requieren `X-API-Key: qt-...` o `Authorization: Bearer qt-...`.
+Cuando la exigencia de clave API está activada (panel  Claves API), los endpoints de servicio requieren `X-API-Key: qt-...` o `Authorization: Bearer qt-...`.
 
 ## Transcripción (Whisper)
 
@@ -148,7 +147,8 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 ## Configuración
 
 ### config/settings.py
-- `CONFIG`: host (`0.0.0.0`), puerto (`8001`), `default_model`, `whisper_model`, `max_text_chars`, directorios de modelos/voces/audios
+- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `model` (`default_model`, `default_voice`), `whisper` (`whisper_model`), `limits`, `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars`, `device`, `dtype`, flags de VRAM, etc.).
+- Variables de entorno con prefijo `TTS_` y delimitador `__`, p.ej. `TTS_SERVER__HOST=0.0.0.0`.
 
 ### Configuración en tiempo de ejecución (`data/runtime.json`)
 Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API.

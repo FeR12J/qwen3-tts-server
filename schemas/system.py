@@ -16,6 +16,9 @@ class ConfigUpdate(BaseModel):
     log_requests: Optional[bool] = None
     api_keys_enabled: Optional[bool] = None
     device: Optional[str] = None
+    dtype: Optional[str] = None
+    unload_tts_for_whisper: Optional[bool] = None
+    unload_whisper_for_tts: Optional[bool] = None
 
 
 class ApiKeyCreate(BaseModel):

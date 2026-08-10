@@ -8,10 +8,14 @@ import torch
 logger = logging.getLogger("tts")
 
 
-def _resolve_device() -> str:
-    """Import perezoso para evitar el ciclo: utils -> services -> utils."""
+def _resolve_device():
     from services.config_service import resolve_device
     return resolve_device()
+
+
+def _resolve_dtype():
+    from services.config_service import resolve_dtype
+    return resolve_dtype()
 
 
 def get_vram_available():
@@ -28,10 +32,12 @@ def get_vram_available():
 
 
 def get_dtype():
-    """Determinar dtype óptimo para el dispositivo configurado."""
-    if _resolve_device().startswith("cuda:"):
-        return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-    return torch.float32
+    """Determinar dtype óptimo para el dispositivo configurado.
+
+    Usa settings.runtime.dtype ("auto" -> bfloat16/float16 en GPU, float32 en CPU).
+    """
+    dtype = _resolve_dtype()
+    return getattr(torch, dtype, torch.float32)
 
 
 def list_devices() -> dict:

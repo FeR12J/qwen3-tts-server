@@ -66,3 +66,11 @@ def validate_config_update(changes: dict, config_service):
         raise HTTPException(400, f"log_level inválido. Válidos: {', '.join(config_service.VALID_LOG_LEVELS)}")
     if "device" in changes and not config_service.validate_device(changes["device"]):
         raise HTTPException(400, "device inválido. Válidos: auto, cpu o cuda:N con N dentro del rango de GPUs")
+    if "dtype" in changes and not config_service.validate_dtype(changes["dtype"]):
+        raise HTTPException(
+            400,
+            f"dtype inválido. Válidos: {', '.join(config_service.VALID_DTYPES)}",
+        )
+    for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts"):
+        if flag in changes and not isinstance(changes[flag], bool):
+            raise HTTPException(400, f"{flag} debe ser true o false")

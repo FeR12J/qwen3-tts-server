@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""Configuración del servidor TTS."""
+"""Configuración centralizada del servidor TTS."""
 
-from .settings import CONFIG
-from .defaults import (
-    DEFAULTS,
-    def_language,
-    def_voice,
-    def_instruct,
+from .settings import (
+    Settings,
+    settings,
+    get_settings,
 )
 
 __all__ = [
-    "CONFIG",
-    "DEFAULTS",
-    "def_language",
-    "def_voice",
-    "def_instruct",
+    "Settings",
+    "settings",
+    "get_settings",
 ]

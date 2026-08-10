@@ -27,14 +27,14 @@ class TTSService:
         rc = get_runtime_config()
         candidates = [rc.get("def_voice", "")]
         try:
-            for name in sorted(os.listdir(self._config["local_voices_dir"])):
+            for name in sorted(os.listdir(self._config.paths.voices_dir)):
                 candidates.append(name)
         except OSError:
             pass
         for name in candidates:
             if not name:
                 continue
-            voice_dir = os.path.join(self._config["local_voices_dir"], name)
+            voice_dir = os.path.join(self._config.paths.voices_dir, name)
             wav = os.path.join(voice_dir, "voice.wav")
             txt = os.path.join(voice_dir, "text.txt")
             if os.path.exists(wav) and os.path.exists(txt):

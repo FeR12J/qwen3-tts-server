@@ -5,11 +5,11 @@ import os
 import json
 import logging
 
-from utils.paths import DATA_DIR
+from config.settings import settings
 
 logger = logging.getLogger("tts")
 
-APIKEYS_FILE = os.path.join(DATA_DIR, "apikeys.json")
+APIKEYS_FILE = settings.auth.keys_file
 
 
 def load_keys_file() -> list:
@@ -28,7 +28,7 @@ def load_keys_file() -> list:
 def save_keys_file(keys: list):
     """Persistir las claves API en disco."""
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(APIKEYS_FILE), exist_ok=True)
         with open(APIKEYS_FILE, "w", encoding="utf-8") as f:
             json.dump(keys, f, indent=2, ensure_ascii=False)
     except Exception as e:

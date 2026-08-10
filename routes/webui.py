@@ -7,7 +7,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
-from config.settings import BASE_DIR
+from config.settings import settings
 from schemas.system import ConfigUpdate
 from security.validation import validate_config_update
 from services import config_service
@@ -15,7 +15,7 @@ from utils.gpu import list_devices
 
 logger = logging.getLogger("tts")
 
-WEBUI_DIR = os.path.join(BASE_DIR, "webui")
+WEBUI_DIR = settings.paths.webui_dir
 
 
 def create_webui_routes(app: FastAPI, ctx):

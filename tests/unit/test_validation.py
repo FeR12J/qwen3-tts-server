@@ -57,3 +57,25 @@ def test_validate_audio_size():
     with pytest.raises(HTTPException):
         validate_audio_size(b"x" * 1025, 1024)
     validate_audio_size(b"x" * 1024, 1024)
+
+
+def test_validate_config_update_dtype():
+    from security.validation import validate_config_update
+
+    class FakeConfigService:
+        VALID_DTYPES = ("auto", "bfloat16", "float16", "float32")
+
+        def validate_dtype(self, dtype):
+            return dtype in self.VALID_DTYPES
+
+        def validate_device(self, device):
+            return device in ("auto", "cpu")
+
+    cs = FakeConfigService()
+    with pytest.raises(HTTPException):
+        validate_config_update({"dtype": "float64"}, cs)
+    with pytest.raises(HTTPException):
+        validate_config_update({"unload_tts_for_whisper": "true"}, cs)
+    with pytest.raises(HTTPException):
+        validate_config_update({"unload_whisper_for_tts": 1}, cs)
+    validate_config_update({"dtype": "bfloat16", "unload_tts_for_whisper": True}, cs)

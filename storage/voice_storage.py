@@ -3,15 +3,15 @@
 
 import os
 
-from utils.paths import VOICES_DIR
+from config.settings import settings
 
 
 def list_voice_dirs() -> list:
     """Listar directorios de voces en el directorio local."""
     try:
         return sorted(
-            d for d in os.listdir(VOICES_DIR)
-            if os.path.isdir(os.path.join(VOICES_DIR, d))
+            d for d in os.listdir(settings.paths.voices_dir)
+            if os.path.isdir(os.path.join(settings.paths.voices_dir, d))
         )
     except OSError:
         return []
@@ -21,7 +21,7 @@ def list_voices_detail() -> list:
     """Listar voces con el estado de su estructura (voice.wav y text.txt)."""
     voices = []
     for v in list_voice_dirs():
-        voice_path = os.path.join(VOICES_DIR, v)
+        voice_path = os.path.join(settings.paths.voices_dir, v)
         has_wav = os.path.exists(os.path.join(voice_path, "voice.wav"))
         has_txt = os.path.exists(os.path.join(voice_path, "text.txt"))
         voices.append({
@@ -39,9 +39,9 @@ def get_voice_files(voice_name: str) -> tuple:
     Lanza FileNotFoundError si la voz no existe y ValueError si falta
     voice.wav o text.txt.
     """
-    voice_path = os.path.join(VOICES_DIR, voice_name)
+    voice_path = os.path.join(settings.paths.voices_dir, voice_name)
     if not os.path.exists(voice_path):
-        raise FileNotFoundError(f"Voz '{voice_name}' no encontrada en {VOICES_DIR}")
+        raise FileNotFoundError(f"Voz '{voice_name}' no encontrada en {settings.paths.voices_dir}")
 
     wav_path = os.path.join(voice_path, "voice.wav")
     txt_path = os.path.join(voice_path, "text.txt")
@@ -56,7 +56,7 @@ def get_voice_files(voice_name: str) -> tuple:
 
 def save_voice_files(voice_name: str, audio_bytes: bytes, text: str) -> tuple:
     """Guardar los archivos de una voz en voices/<nombre>/. Devuelve (wav, txt)."""
-    voice_dir = os.path.join(VOICES_DIR, voice_name)
+    voice_dir = os.path.join(settings.paths.voices_dir, voice_name)
     os.makedirs(voice_dir, exist_ok=True)
     wav_path = os.path.join(voice_dir, "voice.wav")
     txt_path = os.path.join(voice_dir, "text.txt")
