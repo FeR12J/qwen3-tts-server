@@ -88,14 +88,13 @@ class TTSService:
             raise TTSValidationError(str(e))
 
     def _local_voice_ref(self, name: str):
-        """(wav, text) de una voz local por nombre, o None si no existe."""
+        """(wav, text) de una voz local por id o nombre, o None si no existe."""
         if not name:
             return None
-        voice_dir = os.path.join(self._config.paths.voices_dir, name)
-        wav = os.path.join(voice_dir, "voice.wav")
-        txt = os.path.join(voice_dir, "text.txt")
-        if not (os.path.exists(wav) and os.path.exists(txt)):
+        ref = self._voices.get_reference(name)
+        if ref is None:
             return None
+        wav, txt = ref
         self._check_ref_audio_size(wav)
         with open(txt, "r", encoding="utf-8") as f:
             return wav, f.read().strip()
@@ -105,9 +104,8 @@ class TTSService:
         rc = get_runtime_config()
         candidates = [rc.get("def_voice", "")]
         try:
-            for name in sorted(os.listdir(self._config.paths.voices_dir)):
-                candidates.append(name)
-        except OSError:
+            candidates += [item["id"] for item in self._voices.list() if item.get("valid")]
+        except Exception:
             pass
         for name in candidates:
             ref = self._local_voice_ref(name)
@@ -166,6 +164,13 @@ class TTSService:
             return request.reference_audio, ref_text
 
         if request.voice:
+            voice = request.voice or ""
+            if ("/" in voice or "\\" in voice or ".." in voice or "\x00" in voice
+                    or voice in (".", "..") or voice.startswith(("/", "\\"))):
+                raise TTSValidationError(
+                    "'voice' debe ser el id o nombre de una voz local "
+                    "(ej: 'voice_7f32a1'), no una ruta de archivo"
+                )
             ref = self._local_voice_ref(request.voice)
             if ref is None:
                 raise TTSValidationError(f"Voz local '{request.voice}' no encontrada.")
@@ -234,9 +239,9 @@ class TTSService:
             if os.path.exists(request.reference_audio):
                 self._check_ref_audio_size(request.reference_audio)
         if request.voice:
-            wav = os.path.join(self._config.paths.voices_dir, request.voice, "voice.wav")
-            if os.path.exists(wav):
-                self._check_ref_audio_size(wav)
+            ref = self._voices.get_reference(request.voice)
+            if ref:
+                self._check_ref_audio_size(ref[0])
 
     def _make_chunker(self) -> TextChunker:
         """Chunker de textos largos según la configuración.

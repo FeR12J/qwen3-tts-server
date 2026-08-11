@@ -163,12 +163,12 @@ async def startup_procedure(ctx: AppContext):
         print("\nNo hay modelos disponibles. El servidor funcionará sin modelo inicial.")
 
     # Voces locales
-    local_voices = ctx.voices.list_voices()
+    local_voices = ctx.voices.list()
 
     print(f"\nVoces locales disponibles ({len(local_voices)}):")
     for i, v in enumerate(local_voices, 1):
-        status = "OK" if v["valid"] else ("KO" if not v["has_voice_wav"] else "!?")
-        print(f"   {i}. {v['name']} {status}")
+        status = "OK" if v["valid"] else ("KO" if not v["has_reference_audio"] else "!?")
+        print(f"   {i}. {v['name']} (id: {v['id']}) {status}")
 
     # Intentar clonar voz por defecto si hay modelos y voces disponibles
     if len(local_models) > 0 and len(local_voices) >= 1 and ctx.models.is_loaded():

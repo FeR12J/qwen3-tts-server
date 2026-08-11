@@ -33,6 +33,28 @@ def validate_voice_name(voice_name: str):
         )
 
 
+def reject_path_traversal(value: str, field: str = "Valor") -> None:
+    """Rechazar valores con forma de ruta (path traversal) con un 400 claro.
+
+    Bloquea rutas absolutas (``/etc/...``, ``C:\\``), separadores, ``..``,
+    ``.`` y NUL, de modo que un id/nombre de voz nunca pueda usarse para
+    construir rutas en el servidor.
+    """
+    value = str(value or "")
+    if (value.startswith(("/", "\\"))
+            or re.match(r"^[A-Za-z]:[\\/]", value)
+            or "/" in value
+            or "\\" in value
+            or ".." in value
+            or "\x00" in value
+            or value in ("", ".", "..")):
+        raise HTTPException(
+            400,
+            f"{field} no puede ser una ruta de archivo (se rechaza '{value}'). "
+            "Use solo un id o nombre de voz.",
+        )
+
+
 def validate_model_id(model_id: str):
     """Validar que el identificador de modelo no esté vacío."""
     if not model_id:

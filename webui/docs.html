@@ -72,8 +72,11 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
     <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar el modelo actual y liberar VRAM</td><td>Admin</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/models</code></td><td>Listar modelos disponibles (alias <code>/tts/audio/models</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Admin</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz subiendo audio (wav/mp3/flac/ogg/m4a) + transcripción. La normaliza y clona</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz: multipart <code>audio</code> + <code>text</code> + <code>voice_name</code>, opc. <code>language</code>, <code>description</code>. Id generado por el servidor</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Admin</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/voices/{voice_id}</code></td><td>Metadata de una voz (id, name, language, description, created_at, ...)</td><td>Admin</td></tr>
+    <tr><td><span class="method m-patch">PATCH</span></td><td><code>/voices/{voice_id}</code></td><td>Actualizar metadata y/o referencia (name, language, description, text, audio)</td><td>Admin</td></tr>
+    <tr><td><span class="method m-delete">DELETE</span></td><td><code>/voices/{voice_id}</code></td><td>Eliminar una voz</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe</code></td><td>Transcribir audio a texto con Whisper (multipart: <code>audio</code>, opcional <code>language</code>)</td><td>Sí</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/transcribe/status</code></td><td>Estado del modelo Whisper (cargado/descargado, dispositivo)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe/unload</code></td><td>Descargar el modelo Whisper y liberar memoria</td><td>Sí</td></tr>
@@ -102,7 +105,7 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
   }' \
   --output voz.wav</pre>
 <h3>Con voz clonada</h3>
-<pre># 1. Clonar una voz local (voices/&lt;nombre&gt;/voice.wav + text.txt)
+<pre># 1. Clonar una voz local (voices/&lt;id&gt;/metadata.json + reference.wav + reference.txt)
 curl -X POST http://localhost:8001/voice/load \
   -H "Content-Type: application/json" \
   -d '{"voice_name": "alberto"}'
@@ -117,12 +120,26 @@ curl -X POST http://localhost:8001/tts \
 curl -X POST http://localhost:8001/voice/unload</pre>
 
 <h3>Crear una voz nueva (subiendo archivos)</h3>
-<p>Se suben el audio WAV y su transcripción con <code>multipart/form-data</code>. La voz se guarda en <code>voices/&lt;nombre&gt;/</code> y se clona automáticamente:</p>
+<p>Se suben el audio (wav, mp3, flac, ogg, m4a) y su transcripción con <code>multipart/form-data</code>. El audio se valida (MIME, contenido, duración, sample rate, canales), se normaliza a WAV 16 kHz mono y se guarda en <code>voices/&lt;voice_id&gt;/</code> junto a <code>metadata.json</code> y <code>reference.txt</code>. La voz se clona automáticamente. El <code>voice_id</code> lo genera el servidor (ej: <code>voice_7f32a1</code>): nunca se aceptan rutas ni ids del cliente; el nombre visible (<code>voice_name</code>) es solo metadata. El campo <code>voice</code> de las peticiones TTS acepta únicamente el <code>voice_id</code> o el nombre de una voz local: el servidor resuelve internamente la ruta a <code>reference.wav</code>/<code>reference.txt</code> y rechaza cualquier intento de path traversal (<code>../</code>, <code>/etc/</code>, <code>C:\</code>, ...).</p>
 <pre>curl -X POST http://localhost:8001/voice/create \
   -H "X-API-Key: qt-tu-clave-aqui" \
-  -F "voice_name=maria" \
+  -F "voice_name=Maria" \
+  -F "language=es" \
+  -F "description=Voz femenina cálida" \
   -F "text=Hola, esta es la transcripción del audio de referencia." \
-  -F "audio=@/ruta/al/audio.wav"</pre>
+  -F "audio=@/ruta/al/audio.wav"
+# -> { "status": "ok", "voice": "voice_7f32a1", ... }
+
+# Consultar metadata de la voz (por el id generado por el servidor)
+curl -X GET http://localhost:8001/voices/voice_7f32a1 -H "X-API-Key: qt-tu-clave-aqui"
+
+# Actualizar nombre/idioma/descripción
+curl -X PATCH http://localhost:8001/voices/voice_7f32a1 \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -F "language=es" -F "description=Narradora"
+
+# Eliminar la voz
+curl -X DELETE http://localhost:8001/voices/voice_7f32a1 -H "X-API-Key: qt-tu-clave-aqui"</pre>
 
 <h2>Transcripción de audio (Whisper)</h2>
 <p>El servidor incluye transcripción de audio con el modelo Whisper local (<code>models/whisper-large-v3</code>). El modelo se carga de forma perezosa en la primera petición y usa el dispositivo configurado (<code>device</code>). Formatos soportados: wav, mp3, flac, ogg, m4a.</p>

@@ -19,14 +19,14 @@ qwen3-tts-server/
 ├── routes/              # Endpoints HTTP (sin lógica de inferencia)
 │   ├── tts.py           # /tts, /tts/stream, /tts/play, /tts/audio/speech
 │   ├── models.py        # /model/load, /model/unload, /models
-│   ├── voices.py        # /voice/load, /voice/create, /voice/unload, /voices
+│   ├── voices.py        # /voice/load, /voice/create, /voice/unload, /voices (CRUD) (CRUD)
 │   ├── system.py        # / (estado del servidor)
 │   ├── whisper.py       # /transcribe, /transcribe/status, /transcribe/unload
 │   ├── auth.py          # Gestión de claves API (/webui/api/apikeys*)
 │   └── webui.py         # Panel web, docs y configuración
 ├── services/            # Lógica de negocio e inferencia
 │   ├── model_manager.py # Registro de modelos, carga/descarga, voice clone prompt
-│   ├── voice_manager.py # Voces locales y prompt de clonación activo
+│   ├── voice_manager.py # VoiceManager: CRUD de voces y clonación activa
 │   ├── tts_service.py   # Generación TTS (despacho por tipo de modelo)
 │   ├── whisper_service.py  # Transcripción con Whisper (transformers)
 │   ├── audio_service.py # Audio central: decodificar, validar, normalizar, convertir, duración
@@ -41,7 +41,7 @@ qwen3-tts-server/
 ├── storage/             # Persistencia en disco
 │   ├── config_storage.py   # data/runtime.json
 │   ├── api_key_storage.py  # data/apikeys.json
-│   └── voice_storage.py    # voces locales (voice.wav + text.txt)
+│   └── voice_storage.py    # voces locales (metadata.json + reference.wav + reference.txt)
 ├── utils/               # Utilidades
 │   ├── paths.py         # Directorios del proyecto
 │   ├── gpu.py           # VRAM, dtype, limpieza CUDA, listado de GPUs
@@ -51,7 +51,7 @@ qwen3-tts-server/
 │   ├── unit/
 │   └── integration/
 ├── models/              # Modelos locales (Qwen3-TTS + whisper-large-v3)
-├── voices/              # Voces clonadas locales (cada una con voice.wav + text.txt)
+├── voices/              # Voces locales: <id>/metadata.json + reference.wav + reference.txt
 ├── data/                # Datos persistentes (runtime.json, apikeys.json)
 ├── webui/               # Panel web (panel.html, docs.html)
 ├── audios/              # Audios generados
@@ -104,7 +104,10 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 | ADMIN | POST | `/model/load` | Cargar modelo local |
 | ADMIN | POST | `/model/unload` | Descargar modelo y liberar VRAM |
 | ADMIN | POST | `/voice/load` | Cargar voz para clonación (solo modelos `base`) |
-| ADMIN | POST | `/voice/create` | Subir audio (wav/mp3/flac/ogg/m4a) + transcripción, la normaliza y clona |
+| ADMIN | POST | `/voice/create` | Crear voz (multipart: audio, text, name, opc. language/description). Id generado por el servidor |
+| ADMIN | GET | `/voices/{voice_id}` | Metadata de una voz (id, name, language, description, created_at, ...) |
+| ADMIN | PATCH | `/voices/{voice_id}` | Actualizar metadata y/o referencia (name, language, description, text, audio) |
+| ADMIN | DELETE | `/voices/{voice_id}` | Eliminar una voz |
 | ADMIN | POST | `/voice/unload` | Desactivar voice cloning |
 | ADMIN | GET/POST | `/webui/api/config` | Leer/actualizar configuración en tiempo de ejecución |
 | ADMIN | GET/POST | `/webui/api/apikeys` | Listar/crear claves API |

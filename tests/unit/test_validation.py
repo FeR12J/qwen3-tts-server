@@ -9,6 +9,7 @@ from security.validation import (
     require_text,
     validate_voice_name,
     validate_model_id,
+    reject_path_traversal,
 )
 
 
@@ -48,6 +49,32 @@ def test_validate_model_id():
     with pytest.raises(HTTPException):
         validate_model_id("")
     validate_model_id("model-x")
+
+
+@pytest.mark.parametrize("evil", [
+    "../x",
+    "../../etc/passwd",
+    "/etc/passwd",
+    "/home/user/voices/myvoice/reference.wav",
+    "C:\\Windows\\System32",
+    "C:/Windows",
+    "a/b",
+    "a\\b",
+    "..",
+    ".",
+    "/",
+    "\\",
+    "voice\x00_1",
+    "",
+])
+def test_reject_path_traversal(evil):
+    with pytest.raises(HTTPException, match="ruta"):
+        reject_path_traversal(evil, "voice_id")
+
+
+def test_reject_path_traversal_allows_safe_values():
+    for safe in ("voice_7f32a1", "Narrador", "maria_v1", "voz-2", "abc_123"):
+        reject_path_traversal(safe, "voice_id")
 
 
 def test_validate_config_update_dtype():
