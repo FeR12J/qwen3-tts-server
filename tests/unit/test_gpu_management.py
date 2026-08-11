@@ -44,8 +44,9 @@ def models_dir(tmp_path, monkeypatch):
 
 @pytest.fixture
 def whisper_unloaded(monkeypatch):
-    monkeypatch.setattr(ws, "_model", None)
-    monkeypatch.setattr(ws, "_processor", None)
+    svc = ws._get()
+    monkeypatch.setattr(svc, "_model", None)
+    monkeypatch.setattr(svc, "_processor", None)
 
 
 def test_whisper_management_defaults_enabled():
@@ -59,8 +60,9 @@ def test_unload_if_loaded_noop_when_not_loaded(whisper_unloaded):
 
 
 def test_unload_if_loaded_unloads(whisper_unloaded, monkeypatch):
-    monkeypatch.setattr(ws, "_model", object())
-    monkeypatch.setattr(ws, "_processor", object())
+    svc = ws._get()
+    monkeypatch.setattr(svc, "_model", object())
+    monkeypatch.setattr(svc, "_processor", object())
     assert ws.is_loaded() is True
     assert ws.unload_if_loaded() is True
     assert ws.is_loaded() is False
@@ -90,9 +92,10 @@ def test_tts_unloaded_before_whisper_and_restored_after(
 
 
 def test_whisper_unloaded_before_tts(models_dir, monkeypatch, whisper_unloaded):
+    svc = ws._get()
     monkeypatch.setattr(settings.runtime, "unload_whisper_for_tts", True)
-    monkeypatch.setattr(ws, "_model", object())
-    monkeypatch.setattr(ws, "_processor", object())
+    monkeypatch.setattr(svc, "_model", object())
+    monkeypatch.setattr(svc, "_processor", object())
     mgr = ModelManager()
 
     assert ws.is_loaded() is True
@@ -107,8 +110,9 @@ def test_both_models_kept_when_flags_disabled(
     monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
     monkeypatch.setattr(settings.runtime, "unload_tts_for_whisper", False)
     monkeypatch.setattr(settings.runtime, "unload_whisper_for_tts", False)
-    monkeypatch.setattr(ws, "_model", object())
-    monkeypatch.setattr(ws, "_processor", object())
+    svc = ws._get()
+    monkeypatch.setattr(svc, "_model", object())
+    monkeypatch.setattr(svc, "_processor", object())
     voices = FakeVoices()
     mgr = ModelManager()
 

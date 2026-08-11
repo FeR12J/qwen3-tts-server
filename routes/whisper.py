@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Rutas de transcripción de audio con Whisper."""
 
-import asyncio
 import logging
 import traceback
 from typing import Optional
@@ -22,12 +21,7 @@ def create_whisper_routes(app: FastAPI, ctx):
 
     @app.get("/transcribe/status")
     async def transcribe_status():
-        return {
-            "status": "ok",
-            "model_loaded": whisper_service.is_loaded(),
-            "model": settings.whisper.whisper_model,
-            "device": whisper_service.get_device(),
-        }
+        return {"status": "ok", **whisper_service.status()}
 
     @app.post("/transcribe", dependencies=[Depends(require_api_key)])
     async def transcribe_endpoint(
@@ -61,7 +55,7 @@ def create_whisper_routes(app: FastAPI, ctx):
             await prepare_for_whisper(ctx.models, ctx.voices, whisper_service)
 
             try:
-                result = await asyncio.to_thread(whisper_service.transcribe, data, language, ctx.audio)
+                result = await whisper_service.transcribe(data, language)
                 logger.info(f"Transcripción completada ({result['language']}, {result['duration_seconds']}s)")
                 return {"status": "ok", **result}
             except FileNotFoundError as e:
@@ -82,5 +76,5 @@ def create_whisper_routes(app: FastAPI, ctx):
         async with ctx.queue.model_lock():
             if not whisper_service.is_loaded():
                 return {"status": "ok", "message": "El modelo de transcripción ya estaba descargado"}
-            await asyncio.to_thread(whisper_service.unload)
+            await whisper_service.unload()
             return {"status": "ok", "message": "Modelo de transcripción descargado y VRAM liberada"}

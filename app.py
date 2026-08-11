@@ -21,6 +21,7 @@ from services.queue_service import QueueService
 from services.model_manager import ModelManager, GPUOutOfMemoryError, GPU_OOM_MESSAGE
 from services.voice_manager import VoiceManager
 from services.audio_service import AudioService
+from services.whisper_service import configure as configure_whisper
 from services.metrics_service import MetricsService
 from services.tts_service import TTSService, TTSValidationError
 from routes import (
@@ -57,6 +58,7 @@ def build_context() -> AppContext:
     audio = AudioService(settings, queue)
     metrics = MetricsService(settings)
     tts = TTSService(settings, queue, models, voices, audio, metrics)
+    configure_whisper(audio)
     return AppContext(
         config=settings,
         queue=queue,
