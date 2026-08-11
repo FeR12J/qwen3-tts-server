@@ -13,15 +13,16 @@ import logging
 
 from dataclasses import dataclass
 
-from fastapi import HTTPException
-
 from schemas.tts import TTSRequest
-from security.validation import validate_text
 from services.config_service import get_runtime_config
 from services.model_manager import ModelInfo
-from utils.text import split_sentences
+from utils.chunker import TextChunker, TextChunkerError
 
 logger = logging.getLogger("tts")
+
+# Ritmo medio de habla usado para estimar la duración del audio generado
+# a partir de la longitud del texto (antes de usar GPU).
+CHARS_PER_SECOND = 16.0
 
 
 class TTSValidationError(Exception):
@@ -45,7 +46,7 @@ class SynthesisResult:
 
 @dataclass
 class StreamPlan:
-    """Plan de streaming validado (frases + modelo resuelto).
+    """Plan de streaming validado (fragmentos + modelo resuelto).
 
     Se construye antes de abrir la respuesta HTTP para poder devolver
     errores 400 con un status HTTP real.
@@ -67,6 +68,20 @@ class TTSService:
 
     # -- Referencias de voz -------------------------------------------------
 
+    def _check_ref_audio_size(self, wav_path: str):
+        """Limitar el tamaño del audio de referencia (antes de usar GPU)."""
+        from config.settings import settings
+        max_bytes = settings.limits.max_reference_audio_mb * 1024 * 1024
+        try:
+            size = os.path.getsize(wav_path)
+        except OSError as e:
+            raise TTSValidationError(f"No se pudo leer el audio de referencia: {e}")
+        if size > max_bytes:
+            raise TTSValidationError(
+                f"Audio de referencia demasiado grande: {size / (1024 * 1024):.1f} MB "
+                f"(máximo configurado: {settings.limits.max_reference_audio_mb} MB)."
+            )
+
     def _local_voice_ref(self, name: str):
         """(wav, text) de una voz local por nombre, o None si no existe."""
         if not name:
@@ -76,6 +91,7 @@ class TTSService:
         txt = os.path.join(voice_dir, "text.txt")
         if not (os.path.exists(wav) and os.path.exists(txt)):
             return None
+        self._check_ref_audio_size(wav)
         with open(txt, "r", encoding="utf-8") as f:
             return wav, f.read().strip()
 
@@ -136,6 +152,7 @@ class TTSService:
                 raise TTSValidationError(
                     f"reference_audio no existe: {request.reference_audio}"
                 )
+            self._check_ref_audio_size(request.reference_audio)
             ref_text = (request.reference_text or "").strip()
             if not ref_text:
                 raise TTSValidationError(
@@ -175,15 +192,69 @@ class TTSService:
     # -- Síntesis -----------------------------------------------------------
 
     def _require_text(self, request: TTSRequest) -> str:
+        """Validar el texto de entrada contra los límites (antes de GPU).
+
+        Aplica limits.max_text_characters (longitud) y una estimación de
+        limits.max_audio_duration_seconds a partir de la longitud del texto
+        (ritmo medio de habla ~16 caracteres/segundo).
+        """
         text = (request.text or request.input or "").strip()
         if not text:
             raise TTSValidationError("Campo 'text' o 'input' requerido")
-        rc = get_runtime_config()
-        try:
-            validate_text(text, rc["max_text_chars"])
-        except HTTPException as e:
-            raise TTSValidationError(e.detail)
+
+        from config.settings import settings
+        if len(text) > settings.limits.max_text_characters:
+            raise TTSValidationError(
+                f"Texto demasiado largo: {len(text)} caracteres "
+                f"(máximo configurado: {settings.limits.max_text_characters})."
+            )
+
+        estimated = len(text) / CHARS_PER_SECOND
+        if estimated > settings.limits.max_audio_duration_seconds:
+            raise TTSValidationError(
+                f"Audio estimado demasiado largo: ~{estimated:.1f}s "
+                f"(máximo configurado: {settings.limits.max_audio_duration_seconds}s). "
+                "Reduce la longitud del texto."
+            )
         return text
+
+    def _validate_input_limits(self, request: TTSRequest):
+        """Límites de entrada independientes del modelo (antes de GPU/lock).
+
+        Comprueba el tamaño del audio de referencia indicado en la petición
+        (reference_audio o voz local) contra limits.max_reference_audio_mb.
+        """
+        if request.reference_audio:
+            # Si no existe, el error lo dará la validación de la referencia.
+            if os.path.exists(request.reference_audio):
+                self._check_ref_audio_size(request.reference_audio)
+        if request.voice:
+            wav = os.path.join(self._config.paths.voices_dir, request.voice, "voice.wav")
+            if os.path.exists(wav):
+                self._check_ref_audio_size(wav)
+
+    def _make_chunker(self) -> TextChunker:
+        """Chunker de textos largos según la configuración.
+
+        - ``limits.max_text_characters``: límite del texto de entrada.
+        - ``text.chunking``: modo de división (sentence | paragraph).
+        - ``max_text_chars`` (runtime): tamaño máximo de cada fragmento
+          generado (editable desde el panel).
+        """
+        from config.settings import settings
+        rc = get_runtime_config()
+        return TextChunker(
+            max_characters=settings.limits.max_text_characters,
+            chunking=settings.text.chunking,
+            chunk_size=rc["max_text_chars"],
+        )
+
+    def _chunk_text(self, text: str) -> list:
+        """Dividir el texto en fragmentos, traduciendo errores a 400."""
+        try:
+            return self._make_chunker().chunk(text)
+        except TextChunkerError as e:
+            raise TTSValidationError(str(e))
 
     def _build_kwargs(self, request: TTSRequest, info: ModelInfo) -> dict:
         """Validar según el tipo de modelo y construir kwargs de generación.
@@ -248,24 +319,53 @@ class TTSService:
 
         Único punto de generación no-streaming del servidor; todos los
         endpoints TTS pasan por aquí. Ejecuta dentro de queue.inference_lock().
+
+        Textos largos (hasta limits.max_text_characters) se dividen en fragmentos
+        (TextChunker) y se generan secuencialmente, concatenando el audio.
         """
         from services import whisper_service
         from services.gpu_management import prepare_for_tts
 
         text = self._require_text(request)
+        self._validate_input_limits(request)
         rc = get_runtime_config()
 
         async with self._queue.inference_lock():
+            # Validación completa (idioma, speaker, refs de voz, tamaños)
+            # ANTES de preparar/consumir GPU.
+            info = await self._resolve_model(request)
+            self._build_kwargs(request, info)
+
             await prepare_for_tts(self._models, self._voices, whisper_service)
 
             if rc.get("log_requests", True) and http_request is not None and self._metrics:
                 self._metrics.log_request(http_request, text)
 
-            info = await self._resolve_model(request)
-            wavs, sr = await self._generate_one(request, text, info)
-            audio = self._encode(request, wavs[0], sr)
+            chunks = self._chunk_text(text)
+            if not chunks:
+                raise TTSValidationError(
+                    "No se pudo dividir el texto en fragmentos para generar."
+                )
 
-            logger.info(f"Generación completada (model: {info.model_id}, {info.model_type})")
+            if len(chunks) == 1:
+                wavs, sr = await self._generate_one(request, chunks[0], info)
+                wav = wavs[0]
+            else:
+                logger.info(
+                    f"Texto largo: {len(text)} caracteres -> {len(chunks)} fragmentos"
+                )
+                parts = []
+                for i, chunk in enumerate(chunks):
+                    logger.info(f"Generando fragmento {i + 1}/{len(chunks)}")
+                    wavs, sr = await self._generate_one(request, chunk, info)
+                    parts.append(wavs[0])
+                wav = self._concat_wavs(parts)
+
+            audio = self._encode(request, wav, sr)
+            logger.info(
+                f"Generación completada (model: {info.model_id}, "
+                f"{info.model_type}, {len(chunks)} fragmento(s))"
+            )
             return SynthesisResult(
                 audio=audio,
                 sample_rate=sr,
@@ -273,37 +373,43 @@ class TTSService:
                 model_type=info.model_type,
             )
 
+    @staticmethod
+    def _concat_wavs(parts: list):
+        """Concatenar arrays de onda (misma frecuencia de muestreo)."""
+        import numpy as np
+        return np.concatenate(parts)
+
     async def stream_plan(self, request: TTSRequest) -> StreamPlan:
-        """Validar la petición y dividir el texto en frases ANTES del response.
+        """Validar la petición y dividir el texto en fragmentos ANTES del response.
 
         Se ejecuta antes de abrir el stream: cualquier error de validación
         (texto, modelo, idioma, voz...) devuelve un 400 HTTP real, no un
         stream truncado a mitad.
         """
         text = self._require_text(request)
-        rc = get_runtime_config()
-        sentences = split_sentences(text, rc["max_text_chars"])
-        if not sentences:
+        self._validate_input_limits(request)
+        chunks = self._chunk_text(text)
+        if not chunks:
             raise TTSValidationError(
-                "No se pudo dividir el texto en frases para streaming."
+                "No se pudo dividir el texto en fragmentos para streaming."
             )
-        logger.info(f"Streaming: {len(sentences)} frases, {len(text)} caracteres")
+        logger.info(f"Streaming: {len(chunks)} fragmentos, {len(text)} caracteres")
 
         async with self._queue.inference_lock():
             info = await self._resolve_model(request)
             self._build_kwargs(request, info)  # validación sin GPU
 
-        return StreamPlan(sentences=sentences, info=info)
+        return StreamPlan(sentences=chunks, info=info)
 
     async def stream_synthesize(self, request: TTSRequest, plan: StreamPlan,
                                 http_request=None):
-        """Generador de streaming real: audio por frases en cuanto terminan.
+        """Generador de streaming real: audio por fragmentos (frases o párrafos, según text.chunking) en cuanto terminan.
 
         Cada yield es el PCM 16-bit LE de una frase (sin cabecera WAV: el
         ensamblado del formato es responsabilidad de la capa HTTP). Mantiene
         queue.inference_lock() durante todo el stream (GPU exclusiva) y solo
         devuelve tras generar la frase: el primer audio llega cuando acaba
-        la primera frase, no al terminar todo el texto.
+        el primer fragmento, no al terminar todo el texto.
         """
         from services import whisper_service
         from services.gpu_management import prepare_for_tts
@@ -326,7 +432,7 @@ class TTSService:
                 wavs, sr = await self._generate_one(request, sentence, info)
                 audio = self._audio.encode_pcm(wavs[0], sr)
                 self._audio.save(wavs[0], sr, "tts_stream")
-                logger.info(f"Frase emitida ({len(sentence)} chars, model: {info.model_id})")
+                logger.info(f"Fragmento emitido ({len(sentence)} chars, model: {info.model_id})")
                 yield SynthesisResult(
                     audio=audio,
                     sample_rate=sr,

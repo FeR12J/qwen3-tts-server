@@ -22,7 +22,7 @@ Precedencia: variables de entorno > data/runtime.json > defaults.
 """
 
 import os
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,6 +70,19 @@ class WhisperSettings(BaseModel):
     max_transcribe_audio_bytes: int = 100 * 1024 * 1024
 
 
+class TextSettings(BaseModel):
+    """Procesado de texto: división en fragmentos de textos largos.
+
+    - ``chunking``: modo de división del TextChunker:
+        * ``sentence``: fragmentos de frases completas (párrafos no mezclados).
+        * ``paragraph``: fragmentos de párrafos completos (solo se subdividen
+          los párrafos que exceden el tamaño de fragmento).
+
+    El límite de caracteres por petición vive en limits.max_text_characters.
+    """
+    chunking: Literal["sentence", "paragraph"] = "sentence"
+
+
 class CorsSettings(BaseModel):
     """Política CORS del servidor."""
     allow_origins: list = ["*"]
@@ -79,9 +92,19 @@ class CorsSettings(BaseModel):
 
 
 class LimitsSettings(BaseModel):
-    """Límites estáticos (tamaños, rotaciones, retención)."""
+    """Límites de entrada del servidor (se comprueban antes de usar GPU).
+
+    - ``max_text_characters``: longitud máxima del texto por petición TTS.
+    - ``max_reference_audio_mb``: tamaño máximo del audio de referencia
+      (clonación de voz) en MB.
+    - ``max_audio_duration_seconds``: duración máxima estimada del audio
+      generado (estimada desde la longitud del texto, ~16 caracteres/segundo).
+    """
     audios_max_age_days: int = 7
     max_voice_audio_bytes: int = 50 * 1024 * 1024
+    max_text_characters: int = 10000
+    max_reference_audio_mb: int = 25
+    max_audio_duration_seconds: int = 30
 
 
 class QueueSettings(BaseModel):
@@ -159,6 +182,7 @@ class Settings(BaseSettings):
     server: ServerSettings = ServerSettings()
     paths: PathsSettings = PathsSettings()
     tts: TtsSettings = TtsSettings()
+    text: TextSettings = TextSettings()
     whisper: WhisperSettings = WhisperSettings()
     cors: CorsSettings = CorsSettings()
     limits: LimitsSettings = LimitsSettings()

@@ -177,6 +177,30 @@ curl -N -X POST http://localhost:8001/tts/stream \
 <p>Las frases se dividen respetando abreviaturas (<code>Sr.</code>) y decimales (<code>3.14</code>); el límite de caracteres por frase es <code>max_text_chars</code>. El primer byte tarda lo que tarda la primera frase; el resto llega frase a frase.</p>
 <p>Si <code>streaming_enabled</code> está en <code>false</code> (configuración en tiempo de ejecución), <code>/tts/stream</code> devuelve <code>404</code> y solo están disponibles los endpoints no-streaming.</p>
 
+<h2>Límites de entrada</h2>
+<p>El servidor nunca acepta entrada ilimitada. Los límites se comprueban <b>antes de cargar o usar la GPU</b> (errores 400 sin tocar el modelo):</p>
+<ul>
+  <li><code>limits.max_text_characters</code> (por defecto 10000): longitud máxima del texto por petición.</li>
+  <li><code>limits.max_reference_audio_mb</code> (por defecto 25): tamaño máximo del audio de referencia de clonación (<code>reference_audio</code> o voces locales).</li>
+  <li><code>limits.max_audio_duration_seconds</code> (por defecto 30): duración estimada del audio generado a partir de la longitud del texto (~16 caracteres/segundo).</li>
+</ul>
+<p>Variables de entorno: <code>QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS</code>, <code>QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB</code>, <code>QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS</code>.</p>
+
+<h2>Textos largos</h2>
+<p>Los endpoints aceptan textos de hasta <code>limits.max_text_characters</code> (por defecto 10000). El texto se divide en fragmentos con <code>utils/chunker.py</code> antes de generar:</p>
+<ul>
+  <li>Se respetan los <b>párrafos</b> (nunca se corta uno a mitad si cabe en el fragmento).</li>
+  <li>Se respetan las <b>frases</b> (nunca se corta una frase a mitad si cabe).</li>
+  <li>Se evitan cortes artificiales: solo se parte por palabras cuando una frase/párrafo excede el tamaño máximo.</li>
+  <li>El tamaño máximo de cada fragmento es <code>max_text_chars</code> (configuración en tiempo de ejecución).</li>
+</ul>
+<p>Modos de división (<code>text.chunking</code>, variable de entorno <code>QWEN_TTS_TEXT__CHUNKING</code>):</p>
+<ul>
+  <li><code>sentence</code> (por defecto): fragmentos de frases completas; los párrafos nunca se mezclan dentro de un fragmento. Recomendado para <code>/tts/stream</code>.</li>
+  <li><code>paragraph</code>: fragmentos de párrafos completos; solo se subdividen los párrafos que exceden el máximo.</li>
+</ul>
+<p>En <code>POST /tts</code> (y play/audio/speech) los fragmentos se generan secuencialmente y el audio se devuelve concatenado en un solo WAV. En <code>POST /tts/stream</code> cada fragmento se emite en cuanto termina.</p>
+
 <h2>OpenWebUI</h2>
 <p>En OpenWebUI, configura un <b>engine de audio (pipeline TTS)</b> o usa la función externa apuntando a:</p>
 <pre>URL: http://HOST_DEL_SERVIDOR:8001/tts/audio/speech

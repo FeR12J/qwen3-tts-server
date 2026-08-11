@@ -160,12 +160,14 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 ## Configuración
 
 ### config/settings.py
-- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `whisper` (`whisper_model`), `limits`, `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars`, `device`, `dtype`, flags de VRAM, etc.).
+- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `text` (`chunking` = modo de división `sentence`/`paragraph`), `whisper` (`whisper_model`), `limits` (límites de entrada, comprobados antes de usar GPU: `max_text_characters` = 10000, `max_reference_audio_mb` = 25, `max_audio_duration_seconds` = 30), `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars` = tamaño máximo de cada fragmento generado, `device`, `dtype`, flags de VRAM, etc.).
 - Variables de entorno con prefijo `QWEN_TTS_`. Soporta al menos:
   - `QWEN_TTS_HOST=0.0.0.0`, `QWEN_TTS_PORT=8001`
   - `QWEN_TTS_DEVICE=cuda:0` (o `auto`/`cpu`), `QWEN_TTS_DTYPE=bfloat16` (o `float16`/`float32`/`auto`)
   - `QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
   - `QWEN_TTS_REQUIRE_API_KEY=true`
+  - `QWEN_TTS_TEXT__CHUNKING=sentence`
+  - `QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS=10000`, `QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB=25`, `QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS=30`
   - `QWEN_TTS_VOICES_DIR=./voices`, `QWEN_TTS_AUDIO_DIR=./audios`
 - El resto de campos usa el nombre por subgrupo (`QWEN_TTS_<GRUPO>__<CAMPO>`), p.ej. `QWEN_TTS_CORS__ALLOW_ORIGINS=["*"]`.
 - Precedencia: variables de entorno > `data/runtime.json` > defaults. Las variables `QWEN_TTS_DEVICE`, `QWEN_TTS_DTYPE` y `QWEN_TTS_REQUIRE_API_KEY` (configuración en tiempo de ejecución) tienen prioridad sobre el archivo persistido.
