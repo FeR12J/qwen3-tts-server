@@ -22,6 +22,14 @@ WEBUI_DIR = settings.paths.webui_dir
 def create_webui_routes(app: FastAPI, ctx):
     """Rutas del panel web y de administración."""
 
+    @app.get("/favicon.svg", include_in_schema=False)
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return FileResponse(
+            os.path.join(WEBUI_DIR, "favicon.svg"),
+            media_type="image/svg+xml",
+        )
+
     @app.get("/webui")
     async def webui_panel():
         return FileResponse(os.path.join(WEBUI_DIR, "panel.html"))

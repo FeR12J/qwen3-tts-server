@@ -102,7 +102,9 @@ class TTSService:
         speaker = request.speaker or rc["def_voice"]
         if not speaker:
             raise TTSValidationError("speaker es obligatorio para CustomVoice.")
-        if info.supported_speakers is not None and speaker not in info.supported_speakers:
+        if info.supported_speakers is not None and speaker.lower() not in {
+            s.lower() for s in info.supported_speakers
+        }:
             raise TTSValidationError(
                 f"speaker '{speaker}' no válido. Válidos: {', '.join(info.supported_speakers)}"
             )
@@ -162,7 +164,9 @@ class TTSService:
     def _validate_language(self, request: TTSRequest, info) -> str:
         rc = get_runtime_config()
         lang = request.language or rc["def_language"]
-        if info.supported_languages is not None and lang not in info.supported_languages:
+        if info.supported_languages is not None and lang.lower() not in {
+            l.lower() for l in info.supported_languages
+        }:
             raise TTSValidationError(
                 f"language '{lang}' no soportado. Soportados: {', '.join(info.supported_languages)}"
             )

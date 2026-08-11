@@ -107,7 +107,7 @@ class RuntimeSettings(BaseModel):
     prioridad sobre el archivo persistido."""
     max_text_chars: int = 1000
     playback_wait_timeout: int = 300
-    def_language: str = "Spanish"
+    def_language: str = "spanish"
     def_voice: str = "Serena"
     def_instruct: str = (
         "Habla en español de España con acento neutro. Evita cualquier tono robótico."
@@ -117,6 +117,8 @@ class RuntimeSettings(BaseModel):
     api_keys_enabled: bool = False
     # Endpoint /tts/stream habilitado (generación por frases en streaming)
     streaming_enabled: bool = True
+    # Guardar una copia de cada audio generado en el directorio audios/
+    save_audios: bool = True
     # Dispositivo de inferencia: "auto" (GPU si hay), "cuda:N" o "cpu"
     device: str = "auto"
     # dtype: "auto" (según GPU), "bfloat16", "float16" o "float32"

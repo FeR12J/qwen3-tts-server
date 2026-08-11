@@ -171,7 +171,7 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 - Precedencia: variables de entorno > `data/runtime.json` > defaults. Las variables `QWEN_TTS_DEVICE`, `QWEN_TTS_DTYPE` y `QWEN_TTS_REQUIRE_API_KEY` (configuración en tiempo de ejecución) tienen prioridad sobre el archivo persistido.
 
 ### Configuración en tiempo de ejecución (`data/runtime.json`)
-Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API y streaming (`streaming_enabled`, habilita/desactiva `/tts/stream`).
+Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API, streaming (`streaming_enabled`) y guardado de audios (`save_audios`).
 
 ## Tests
 

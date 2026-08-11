@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qwen3-TTS · Documentación de la API</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
 :root {
   --bg:#0f1117; --card:#171a23; --card2:#1d2130; --border:#2a2f42;
@@ -95,7 +96,7 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
   -H "X-API-Key: qt-tu-clave-aqui" \
   -d '{
     "text": "Hola, esto es una prueba de voz.",
-    "language": "Spanish",
+    "language": "spanish",
     "speaker": "Serena",
     "instruct": "Habla con entusiasmo."
   }' \
@@ -149,7 +150,7 @@ if KEY:
 
 resp = requests.post(f"{API}/tts", json={
     "text": "Texto a sintetizar",
-    "language": "Spanish",
+    "language": "spanish",
 }, headers=headers)
 
 resp.raise_for_status()
@@ -164,7 +165,7 @@ print("Audio guardado en audio.wav")</pre>
 curl -N -X POST http://localhost:8001/tts/stream \
   -H "Content-Type: application/json" \
   -H "X-API-Key: qt-tu-clave-aqui" \
-  -d '{"text": "Primera frase. Segunda frase. Tercera frase.", "language": "Spanish"}' \
+  -d '{"text": "Primera frase. Segunda frase. Tercera frase.", "language": "spanish"}' \
   | ffplay -nodisp -autoexit - &
 
 # PCM sin cabecera
@@ -187,12 +188,13 @@ API key: qt-tu-clave-aqui   (si las claves están activadas)</pre>
 <pre>{
   "max_text_chars": 1000,          // límite de caracteres por petición
   "playback_wait_timeout": 300,    // timeout de /tts/play (segundos)
-  "def_language": "Spanish",       // idioma por defecto
+  "def_language": "spanish",       // idioma por defecto
   "def_voice": "Serena",           // speaker por defecto
   "def_instruct": "Habla en español...",  // instrucción por defecto
   "log_level": "INFO",             // DEBUG | INFO | WARNING | ERROR
   "log_requests": true,            // registrar peticiones en requests.log
   "streaming_enabled": true,       // habilitar el endpoint /tts/stream
+  "save_audios": true,             // guardar copia de los audios generados en audios/
   "api_keys_enabled": false,       // exigir clave API en el servicio
   "device": "auto"                 // auto | cpu | cuda:0 | cuda:1 | ...
 }</pre>
@@ -214,7 +216,7 @@ curl -X POST http://localhost:8001/webui/api/apikeys/&lt;id&gt;/toggle
 curl -X DELETE http://localhost:8001/webui/api/apikeys/&lt;id&gt;</pre>
 
 <h2>Notas</h2>
-<div class="alert">El audio se devuelve como <code>audio/wav</code>. El servidor guarda una copia de cada generación en <code>audios/</code> (los antiguos se limpian automáticamente al arrancar).</div>
+<div class="alert">El audio se devuelve como <code>audio/wav</code>. El servidor guarda una copia de cada generación en <code>audios/</code> (los antiguos se limpian automáticamente al arrancar); se puede desactivar con <code>save_audios</code>.</div>
 <div class="alert warn">Las claves se almacenan como hash SHA-256. Si pierdes una clave, elimínala y crea otra.</div>
 <div class="alert">Documentación interactiva del framework disponible en <a href="/docs" target="_blank">/docs</a> (Swagger UI).</div>
 

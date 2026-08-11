@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qwen3-TTS · Panel</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>TTS</text></svg>">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
 :root {
   --bg:#0a0c12;
@@ -250,7 +250,7 @@ footer a:hover { text-decoration:underline; }
     <div class="grid2" style="margin-top:2px">
       <div>
         <label for="testLang">Idioma</label>
-        <input type="text" id="testLang" placeholder="Spanish">
+        <input type="text" id="testLang" placeholder="spanish">
       </div>
       <div>
         <label for="testSpeaker">Speaker</label>
@@ -424,6 +424,10 @@ footer a:hover { text-decoration:underline; }
           <div>
             <label for="cfgStreaming">Streaming en <code>/tts/stream</code></label>
             <select id="cfgStreaming"><option value="true">Sí</option><option value="false">No</option></select>
+          </div>
+          <div>
+            <label for="cfgSaveAudios">Guardar audios en <code>audios/</code></label>
+            <select id="cfgSaveAudios"><option value="true">Sí</option><option value="false">No</option></select>
           </div>
         </div>
         <div class="hint" style="margin:12px 0 4px">Gestión de VRAM compartida TTS &lt;-&gt; Whisper (GPUs pequeñas). En GPUs grandes, pon ambos en &laquo;No&raquo; para mantener los dos modelos cargados.</div>
@@ -698,6 +702,7 @@ async function loadConfig() {
     $('cfgDtype').value = c.dtype || 'auto';
     $('cfgLogRequests').value = String(c.log_requests);
     $('cfgStreaming').value = String(c.streaming_enabled !== false);
+    $('cfgSaveAudios').value = String(c.save_audios !== false);
     $('cfgUnloadTtsForWhisper').value = String(c.unload_tts_for_whisper);
     $('cfgUnloadWhisperForTts').value = String(c.unload_whisper_for_tts);
     $('keysGlobal').checked = !!c.api_keys_enabled;
@@ -716,6 +721,7 @@ async function saveConfig() {
     dtype: $('cfgDtype').value,
     log_requests: $('cfgLogRequests').value === 'true',
     streaming_enabled: $('cfgStreaming').value === 'true',
+    save_audios: $('cfgSaveAudios').value === 'true',
     unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',
     unload_whisper_for_tts: $('cfgUnloadWhisperForTts').value === 'true',
     device: $('cfgDevice').value

@@ -61,7 +61,15 @@ class AudioService:
         return header
 
     def save(self, wav, sr, prefix: str) -> str:
-        """Guardar audio WAV en disco y devolver la ruta."""
+        """Guardar audio WAV en disco y devolver la ruta.
+
+        No guarda nada si save_audios está desactivado en la configuración
+        en tiempo de ejecución (devuelve cadena vacía).
+        """
+        from services.config_service import get_runtime_config
+        if not get_runtime_config().get("save_audios", True):
+            logger.info(f"Guardado de audios desactivado (se omite {prefix}_*.wav)")
+            return ""
         dt = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = f"{self._config.paths.audios_dir}/{prefix}_{dt}.wav"
         sf.write(path, wav, sr)
