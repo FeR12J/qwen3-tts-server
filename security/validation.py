@@ -95,6 +95,24 @@ def validate_config_update(changes: dict, config_service):
         or not 1 <= changes["queue_max_size"] <= 100
     ):
         raise HTTPException(400, "queue_max_size debe estar entre 1 y 100")
+    if "port" in changes and (
+        changes["port"] is None or not 1 <= changes["port"] <= 65535
+    ):
+        raise HTTPException(400, "port debe estar entre 1 y 65535")
+    if "cors_enabled" in changes and not isinstance(changes["cors_enabled"], bool):
+        raise HTTPException(400, "cors_enabled debe ser true o false")
+    if "cors_allow_wildcard" in changes and not isinstance(
+        changes["cors_allow_wildcard"], bool
+    ):
+        raise HTTPException(400, "cors_allow_wildcard debe ser true o false")
+    if "cors_origins" in changes:
+        origins = changes["cors_origins"]
+        if not isinstance(origins, list) or not all(
+            isinstance(o, str) and o.strip() for o in origins
+        ):
+            raise HTTPException(400, "cors_origins debe ser una lista de orígenes (URLs)")
+        if any("*" in o for o in origins):
+            raise HTTPException(400, "cors_origins no puede contener '*'")
     for field in (
         "max_text_characters", "max_estimated_audio_duration_seconds",
         "max_reference_audio_mb", "max_reference_duration_seconds",
@@ -124,6 +142,6 @@ def validate_config_update(changes: dict, config_service):
         raise HTTPException(400, "max_channels debe estar entre 1 y 8")
     for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts",
                  "streaming_enabled", "save_audios", "normalize_reference_audio",
-                 "queue_enabled"):
+                 "queue_enabled", "log_input_text"):
         if flag in changes and not isinstance(changes[flag], bool):
             raise HTTPException(400, f"{flag} debe ser true o false")

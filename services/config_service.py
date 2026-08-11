@@ -45,6 +45,10 @@ RUNTIME_DEFAULTS_SEED = {
     "min_sample_rate": ("limits", "min_sample_rate"),
     "max_sample_rate": ("limits", "max_sample_rate"),
     "max_channels": ("limits", "max_channels"),
+    "port": ("server", "port"),
+    "cors_enabled": ("cors", "enabled"),
+    "cors_origins": ("cors", "origins"),
+    "cors_allow_wildcard": ("cors", "allow_wildcard"),
 }
 
 

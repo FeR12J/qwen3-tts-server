@@ -17,7 +17,7 @@ Variables planas soportadas (mapeadas por Settings.settings_customise_sources):
     QWEN_TTS_AUDIO_DIR         -> paths.audios_dir
 
 El resto de variables usa el nombre compuesto por subgrupo
-(QWEN_TTS_<GRUPO>__<CAMPO>), p.ej. QWEN_TTS_CORS__ALLOW_ORIGINS.
+(QWEN_TTS_<GRUPO>__<CAMPO>), p.ej. QWEN_TTS_CORS__ORIGINS.
 Precedencia: variables de entorno > data/runtime.json > defaults.
 """
 
@@ -84,8 +84,19 @@ class TextSettings(BaseModel):
 
 
 class CorsSettings(BaseModel):
-    """Política CORS del servidor."""
-    allow_origins: list = ["*"]
+    """Política CORS del servidor.
+
+    - ``enabled``: activar respuestas CORS. Desactivado por defecto (cada
+      origen se permite solo si está listado; nunca "*" por defecto).
+    - ``origins``: orígenes permitidos (p.ej. ["http://localhost:3000"]).
+      También son editables en tiempo de ejecución desde el panel
+      (cors_enabled / cors_origins), y el middleware los lee en cada petición.
+    - ``allow_wildcard``: permitir cualquier origen (cabecera "*"). Solo
+      tiene efecto si enabled=true. Desactivado por defecto.
+    """
+    enabled: bool = False
+    origins: list = ["http://localhost:3000"]
+    allow_wildcard: bool = False
     allow_credentials: bool = False
     allow_methods: list = ["*"]
     allow_headers: list = ["*"]
@@ -207,6 +218,16 @@ class RuntimeSettings(BaseModel):
     # su longitud (text_length). Activar log_input_text para registrar el
     # texto completo (truncado) en requests.log.
     log_input_text: bool = False
+    # Puerto HTTP del servidor (editable desde el panel; se aplica al
+    # reiniciar). El default se siembra desde server.port en el arranque.
+    port: int = 8001
+    # CORS editable en tiempo de ejecución (el middleware lo lee en cada
+    # petición: los cambios del panel se aplican sin reiniciar).
+    cors_enabled: bool = False
+    cors_origins: list = Field(default_factory=list)
+    # Permitir cualquier origen ("Access-Control-Allow-Origin: *"). Solo
+    # tiene efecto si cors_enabled=true. Desactivado por defecto.
+    cors_allow_wildcard: bool = False
     api_keys_enabled: bool = False
     # Endpoint /tts/stream habilitado (chunked streaming por frases)
     streaming_enabled: bool = True

@@ -468,6 +468,30 @@ footer a:hover { text-decoration:underline; }
             <input type="number" id="cfgTtl" min="0.1" step="1">
             <div class="hint">La limpieza automática de <code>audios/</code> elimina los más antiguos.</div>
           </div>
+          <div>
+            <label for="cfgPort">Puerto HTTP del servidor</label>
+            <input type="number" id="cfgPort" min="1" max="65535">
+            <div class="hint">Se aplica al reiniciar el servidor.</div>
+          </div>
+        </div>
+
+        <div class="section-title">CORS</div>
+        <div class="grid2">
+          <div>
+            <label for="cfgCorsEnabled">Permitir peticiones de otros orígenes</label>
+            <select id="cfgCorsEnabled"><option value="false">Desactivado</option><option value="true">Activado</option></select>
+            <div class="hint">Se aplica en la siguiente petición, sin reiniciar.</div>
+          </div>
+          <div>
+            <label for="cfgCorsAllowWildcard">Permitir todos los orígenes (<code>*</code>)</label>
+            <select id="cfgCorsAllowWildcard"><option value="false">No</option><option value="true">Sí</option></select>
+            <div class="hint">Responde <code>Access-Control-Allow-Origin: *</code> a cualquier origen. Desactivado por defecto.</div>
+          </div>
+          <div>
+            <label for="cfgCorsOrigins">Orígenes permitidos (separados por coma)</label>
+            <input type="text" id="cfgCorsOrigins" placeholder="http://localhost:3000">
+            <div class="hint">Ej: <code>http://localhost:3000, http://192.168.1.10:5173</code></div>
+          </div>
         </div>
 
         <div class="section-title">Límites de entrada (audio subido)</div>
@@ -813,6 +837,10 @@ async function loadConfig() {
     $('cfgParallel').value = c.max_parallel_inference;
     $('cfgQueueEnabled').value = String(c.queue_enabled !== false);
     $('cfgQueueMaxSize').value = c.queue_max_size;
+    $('cfgPort').value = c.port;
+    $('cfgCorsEnabled').value = String(c.cors_enabled === true);
+    $('cfgCorsAllowWildcard').value = String(c.cors_allow_wildcard === true);
+    $('cfgCorsOrigins').value = (c.cors_origins || []).join(', ');
     $('cfgMaxEstDuration').value = c.max_estimated_audio_duration_seconds;
     $('cfgMaxRefAudioMb').value = c.max_reference_audio_mb;
     $('cfgMaxRefDuration').value = c.max_reference_duration_seconds;
@@ -852,6 +880,10 @@ async function saveConfig() {
     max_parallel_inference: parseInt($('cfgParallel').value),
     queue_enabled: $('cfgQueueEnabled').value === 'true',
     queue_max_size: parseInt($('cfgQueueMaxSize').value),
+    port: parseInt($('cfgPort').value),
+    cors_enabled: $('cfgCorsEnabled').value === 'true',
+    cors_allow_wildcard: $('cfgCorsAllowWildcard').value === 'true',
+    cors_origins: $('cfgCorsOrigins').value.split(',').map(s => s.trim()).filter(Boolean),
     max_estimated_audio_duration_seconds: parseInt($('cfgMaxEstDuration').value),
     max_reference_audio_mb: parseInt($('cfgMaxRefAudioMb').value),
     max_reference_duration_seconds: parseInt($('cfgMaxRefDuration').value),

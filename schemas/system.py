@@ -39,6 +39,14 @@ class ConfigUpdate(BaseModel):
     min_sample_rate: Optional[int] = None
     max_sample_rate: Optional[int] = None
     max_channels: Optional[int] = None
+    log_input_text: Optional[bool] = None
+    # Puerto HTTP del servidor (se aplica al reiniciar)
+    port: Optional[int] = None
+    # CORS editable (se aplica en la siguiente petición, sin reiniciar)
+    cors_enabled: Optional[bool] = None
+    cors_origins: Optional[list] = None
+    # Permitir cualquier origen ("Access-Control-Allow-Origin: *")
+    cors_allow_wildcard: Optional[bool] = None
 
 
 class ApiKeyCreate(BaseModel):

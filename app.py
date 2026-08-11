@@ -3,6 +3,7 @@
 
 import os
 import asyncio
+import contextvars
 import gc
 import logging
 import uuid
@@ -14,12 +15,15 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from starlette.datastructures import MutableHeaders
 
 from config.settings import settings
 from utils.logging import setup_logging
 from utils.gpu import get_vram_available
-from services.config_service import load_runtime_config, apply_log_level
+from services.config_service import (
+    load_runtime_config, apply_log_level, get_runtime_config,
+)
 from services.errors import APIError
 from services.queue_service import QueueService
 from services.model_manager import ModelManager
@@ -29,6 +33,69 @@ from services.whisper_service import configure as configure_whisper
 from services import whisper_service
 from services.metrics_service import MetricsService
 from services.tts_service import TTSService
+
+
+# Estado CORS por petición (contextvars): evita carreras entre requests
+# concurrentes al cambiar la configuración en caliente.
+_cors_state = contextvars.ContextVar("cors_state", default=None)
+
+
+class DynamicCORSMiddleware(CORSMiddleware):
+    """CORS editable en tiempo de ejecución desde el panel.
+
+    Lee cors_enabled / cors_origins / cors_allow_wildcard de la
+    configuración runtime en cada petición, de modo que los cambios se
+    aplican sin reiniciar el servidor. Nunca se permite "*" por defecto
+    (configuración raíz: enabled=false); el wildcard solo se admite si se
+    habilita explícitamente desde el panel.
+    """
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            rc = get_runtime_config()
+            if rc.get("cors_enabled", False):
+                _cors_state.set((
+                    bool(rc.get("cors_allow_wildcard", False)),
+                    tuple(rc.get("cors_origins") or []),
+                ))
+            else:
+                _cors_state.set((False, ()))
+        await super().__call__(scope, receive, send)
+
+    def is_allowed_origin(self, origin: str) -> bool:
+        wildcard, origins = _cors_state.get() or (False, ())
+        return wildcard or origin in origins
+
+    def preflight_response(self, request_headers):
+        wildcard, _ = _cors_state.get() or (False, ())
+        if wildcard:
+            headers = dict(self.preflight_headers)
+            if self.allow_credentials:
+                headers["Access-Control-Allow-Origin"] = request_headers["origin"]
+                headers["Vary"] = "Origin"
+            else:
+                headers["Access-Control-Allow-Origin"] = "*"
+            return Response(status_code=200, headers=headers)
+        return super().preflight_response(request_headers)
+
+    async def send(self, message, send, request_headers):
+        if message["type"] != "http.response.start":
+            await send(message)
+            return
+        wildcard, origins = _cors_state.get() or (False, ())
+        message.setdefault("headers", [])
+        headers = MutableHeaders(scope=message)
+        origin = request_headers["Origin"]
+        if wildcard:
+            if self.allow_credentials:
+                headers["Access-Control-Allow-Origin"] = origin
+                headers.add_vary_header("Origin")
+            else:
+                headers["Access-Control-Allow-Origin"] = "*"
+        elif origin in origins:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers.add_vary_header("Origin")
+        await send(message)
 from routes import (
     create_tts_routes,
     create_models_routes,
@@ -135,8 +202,11 @@ async def lifespan(app: FastAPI):
 # Inicializar aplicación FastAPI
 app = FastAPI(title="Qwen3-TTS API", lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware,
-    **settings.cors.model_dump(),
+    DynamicCORSMiddleware,
+    allow_origins=settings.cors.origins,
+    allow_credentials=settings.cors.allow_credentials,
+    allow_methods=settings.cors.allow_methods,
+    allow_headers=settings.cors.allow_headers,
 )
 
 
@@ -280,8 +350,8 @@ async def startup_procedure(ctx: AppContext):
             logger.warning(f"Error creando voz clonada (continuar sin voice cloning): {e}")
 
     logger.info("Escuchando...")
-    logger.info(f"WebUI disponible en: http://localhost:{settings.server.port}/webui")
-    logger.info(f"Documentación de la API: http://localhost:{settings.server.port}/webui/docs")
+    logger.info(f"WebUI disponible en: http://localhost:{settings.runtime.port}/webui")
+    logger.info(f"Documentación de la API: http://localhost:{settings.runtime.port}/webui/docs")
 
 
 async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
@@ -341,10 +411,15 @@ async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
 
 # Punto de entrada principal
 if __name__ == "__main__":
+    # Cargar la configuración runtime ANTES de construir uvicorn.Config:
+    # el puerto editable (settings.runtime.port) se aplica al bind.
+    load_runtime_config()
+    apply_log_level()
+    effective_port = settings.runtime.port or settings.server.port
     config = uvicorn.Config(
         app,
         host=settings.server.host,
-        port=settings.server.port,
+        port=effective_port,
         # Apagado ordenado: esperar (sin límite) a que terminen las peticiones
         # e inferencias en curso al recibir SIGTERM/SIGINT, en lugar de cortarlas.
         timeout_graceful_shutdown=None,
