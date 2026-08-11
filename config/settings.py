@@ -171,7 +171,12 @@ class RuntimeSettings(BaseModel):
     """Configuración en tiempo de ejecución: editable desde el panel y
     persistida en disco (data/runtime.json). Las variables de entorno
     QWEN_TTS_DEVICE, QWEN_TTS_DTYPE y QWEN_TTS_REQUIRE_API_KEY tienen
-    prioridad sobre el archivo persistido."""
+    prioridad sobre el archivo persistido.
+
+    Los campos con equivalente en un grupo estático (limits, audio, storage,
+    text, queue) se siembran en load_runtime_config() desde esos grupos, de
+    modo que las variables de entorno QWEN_TTS_<GRUPO>__<CAMPO> siguen
+    teniendo precedencia como fuente de defaults."""
     max_text_chars: int = 1000
     # max_text_chars = chunk_size del chunker. No es solo rendimiento: es un
     # trade-off CALIDAD <-> LATENCIA <-> VRAM.
@@ -194,13 +199,41 @@ class RuntimeSettings(BaseModel):
     # Por defecto el audio se devuelve por HTTP sin persistirlo; activar
     # save_audios desde el panel (o runtime.json) guarda una copia en audios/
     save_audios: bool = False
-    # Dispositivo de inferencia: "auto" (GPU si hay), "cuda:N" o "cpu"
+    # Dispositivo de inferencia: "auto" (GPU si hay), "cuda", "cuda:N" o "cpu"
     device: str = "auto"
     # dtype: "auto" (según GPU), "bfloat16", "float16" o "float32"
     dtype: str = "auto"
     # Gestión de VRAM compartida TTS <-> Whisper (GPUs pequeñas)
     unload_tts_for_whisper: bool = True
     unload_whisper_for_tts: bool = True
+
+    # --- Ajustes heredados de los grupos estáticos (editables en el panel) ---
+
+    # text.chunking: modo de división de textos largos (sentence | paragraph)
+    chunking: str = "sentence"
+    # audio.normalize_reference_audio / normalization_dbfs: normalización del
+    # audio de referencia (clonación de voz)
+    normalize_reference_audio: bool = True
+    normalization_dbfs: float = -1.0
+    # storage.generated_audio_ttl_hours: vida máxima (horas) de audios en audios/
+    generated_audio_ttl_hours: float = 24
+    # queue.max_parallel_inference: inferencias GPU simultáneas (requiere
+    # reinicio para aplicarse: la cola se construye en el arranque)
+    max_parallel_inference: int = 1
+
+    # limits.*: límites de entrada (se comprueban antes de usar GPU).
+    # Los límites de bytes se guardan en MB; el resto en las unidades de uso.
+    max_text_characters: int = 10000
+    max_estimated_audio_duration_seconds: int = 30
+    max_reference_audio_mb: int = 25
+    max_reference_duration_seconds: int = 60
+    max_voice_audio_bytes_mb: int = 50
+    max_voice_audio_duration_seconds: int = 120
+    max_transcribe_audio_bytes_mb: int = 100
+    max_transcribe_duration_seconds: int = 600
+    min_sample_rate: int = 8000
+    max_sample_rate: int = 96000
+    max_channels: int = 2
 
 
 # -- Objeto Settings único -------------------------------------------------

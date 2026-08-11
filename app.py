@@ -55,7 +55,7 @@ class AppContext:
 
 def build_context() -> AppContext:
     """Construir e interconectar todos los servicios."""
-    queue = QueueService(settings.queue.max_parallel_inference)
+    queue = QueueService(settings.runtime.max_parallel_inference)
     models = ModelManager()
     voices = VoiceManager(models)
     audio = AudioService(settings, queue)
@@ -97,7 +97,7 @@ async def audio_cleanup_loop(ctx: AppContext):
     while True:
         await asyncio.sleep(AUDIO_CLEANUP_INTERVAL_SECONDS)
         try:
-            removed = ctx.audio.cleanup_old(settings.storage.generated_audio_ttl_hours * 3600)
+            removed = ctx.audio.cleanup_old(settings.runtime.generated_audio_ttl_hours * 3600)
             if removed:
                 logger.info(f"Limpieza periódica: {removed} audio(s) antiguo(s) eliminados")
         except Exception as e:
@@ -113,9 +113,9 @@ async def lifespan(app: FastAPI):
     curso (incluidas las inferencias activas); solo entonces se ejecuta
     aquí la liberación ordenada de recursos.
     """
-    ctx = build_context()
     load_runtime_config()
     apply_log_level()
+    ctx = build_context()
     register_routes(app, ctx)
     cleanup_task = asyncio.create_task(audio_cleanup_loop(ctx))
     try:
@@ -166,7 +166,7 @@ async def startup_procedure(ctx: AppContext):
     print("." * 60)
 
     # Limpiar audios generados más antiguos que el TTL configurado
-    ctx.audio.cleanup_old(settings.storage.generated_audio_ttl_hours * 3600)
+    ctx.audio.cleanup_old(settings.runtime.generated_audio_ttl_hours * 3600)
 
     # Modelos locales
     local_models = ctx.models.list_local_models()
@@ -296,4 +296,10 @@ if __name__ == "__main__":
         # e inferencias en curso al recibir SIGTERM/SIGINT, en lugar de cortarlas.
         timeout_graceful_shutdown=None,
     )
-    uvicorn.Server(config).run()
+    try:
+        uvicorn.Server(config).run()
+    except KeyboardInterrupt:
+        # Ctrl+C: el apagado ordenado (shutdown_procedure) ya se ha completado;
+        # el runner de asyncio (Py3.14) re-lanza KeyboardInterrupt al salir.
+        # Mismo comportamiento que la CLI de uvicorn: salir sin traceback.
+        pass

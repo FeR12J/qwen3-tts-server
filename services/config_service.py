@@ -26,6 +26,42 @@ RUNTIME_ENV_VARS = {
     "api_keys_enabled": "QWEN_TTS_REQUIRE_API_KEY",
 }
 
+# Defaults editables (runtime) heredados de los grupos estáticos, que son la
+# fuente de las variables de entorno QWEN_TTS_<GRUPO>__<CAMPO>: field -> (grupo, campo)
+RUNTIME_DEFAULTS_SEED = {
+    "chunking": ("text", "chunking"),
+    "normalize_reference_audio": ("audio", "normalize_reference_audio"),
+    "normalization_dbfs": ("audio", "normalization_dbfs"),
+    "generated_audio_ttl_hours": ("storage", "generated_audio_ttl_hours"),
+    "max_parallel_inference": ("queue", "max_parallel_inference"),
+    "max_text_characters": ("limits", "max_text_characters"),
+    "max_estimated_audio_duration_seconds": ("limits", "max_estimated_audio_duration_seconds"),
+    "max_reference_audio_mb": ("limits", "max_reference_audio_mb"),
+    "max_reference_duration_seconds": ("limits", "max_reference_duration_seconds"),
+    "max_voice_audio_duration_seconds": ("limits", "max_voice_audio_duration_seconds"),
+    "max_transcribe_duration_seconds": ("limits", "max_transcribe_duration_seconds"),
+    "min_sample_rate": ("limits", "min_sample_rate"),
+    "max_sample_rate": ("limits", "max_sample_rate"),
+    "max_channels": ("limits", "max_channels"),
+}
+
+
+def _seed_runtime_defaults() -> dict:
+    """Defaults editables heredados de los grupos estáticos.
+
+    Así, una variable QWEN_TTS_LIMITS__MAX_CHANNELS=4 (o cualquier otro
+    ajuste estático por entorno) se aplica también al valor editable del
+    panel, manteniendo la precedencia documentada: entorno > runtime.json
+    > defaults.
+    """
+    out = {}
+    for field, (group, key) in RUNTIME_DEFAULTS_SEED.items():
+        out[field] = getattr(getattr(settings, group), key)
+    # Los límites de bytes se guardan en MB en el runtime (unidades legibles)
+    out["max_voice_audio_bytes_mb"] = settings.limits.max_voice_audio_bytes // (1024 * 1024)
+    out["max_transcribe_audio_bytes_mb"] = settings.limits.max_transcribe_audio_bytes // (1024 * 1024)
+    return out
+
 
 def _env_runtime_values() -> dict:
     """Valores runtime ya resueltos por pydantic desde variables de entorno."""
@@ -39,7 +75,8 @@ def _env_runtime_values() -> dict:
 def load_runtime_config():
     """Cargar configuración persistida desde disco (si existe).
 
-    Precedencia: variables de entorno QWEN_TTS_* > data/runtime.json > defaults.
+    Precedencia: variables de entorno QWEN_TTS_* > data/runtime.json >
+    defaults (heredados de los grupos estáticos).
     """
     env_values = _env_runtime_values()
     settings.runtime = RuntimeSettings()
@@ -49,9 +86,10 @@ def load_runtime_config():
         for key, value in data.items()
         if key in RUNTIME_FIELDS and value is not None
     }
-    valid.update(env_values)
-    if valid:
-        settings.runtime = settings.runtime.model_copy(update=valid)
+    if valid or env_values:
+        settings.runtime = settings.runtime.model_copy(
+            update={**_seed_runtime_defaults(), **valid, **env_values}
+        )
 
 
 def save_runtime_config():
@@ -67,6 +105,32 @@ def get_runtime_config() -> dict:
 def get_runtime() -> RuntimeSettings:
     """Devolver la configuración en tiempo de ejecución tipada."""
     return settings.runtime
+
+
+def get_limits():
+    """Límites de entrada vigentes (editables desde el panel).
+
+    Reemplaza a ``settings.limits`` en las rutas/servicios: los valores
+    editables (runtime) tienen prioridad sobre los estáticos. Expone los
+    mismos nombres que usaban los consumidores; los límites de bytes en
+    bytes (los campos runtime se guardan en MB).
+    """
+    from types import SimpleNamespace
+
+    rc = settings.runtime
+    return SimpleNamespace(
+        max_text_characters=rc.max_text_characters,
+        max_estimated_audio_duration_seconds=rc.max_estimated_audio_duration_seconds,
+        max_reference_audio_mb=rc.max_reference_audio_mb,
+        max_reference_duration_seconds=rc.max_reference_duration_seconds,
+        max_voice_audio_bytes=rc.max_voice_audio_bytes_mb * 1024 * 1024,
+        max_voice_audio_duration_seconds=rc.max_voice_audio_duration_seconds,
+        max_transcribe_audio_bytes=rc.max_transcribe_audio_bytes_mb * 1024 * 1024,
+        max_transcribe_duration_seconds=rc.max_transcribe_duration_seconds,
+        min_sample_rate=rc.min_sample_rate,
+        max_sample_rate=rc.max_sample_rate,
+        max_channels=rc.max_channels,
+    )
 
 
 def update_runtime_config(changes: dict) -> dict:

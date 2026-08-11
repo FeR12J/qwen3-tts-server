@@ -21,6 +21,22 @@ class ConfigUpdate(BaseModel):
     dtype: Optional[str] = None
     unload_tts_for_whisper: Optional[bool] = None
     unload_whisper_for_tts: Optional[bool] = None
+    chunking: Optional[str] = None
+    normalize_reference_audio: Optional[bool] = None
+    normalization_dbfs: Optional[float] = None
+    generated_audio_ttl_hours: Optional[float] = None
+    max_parallel_inference: Optional[int] = None
+    max_text_characters: Optional[int] = None
+    max_estimated_audio_duration_seconds: Optional[int] = None
+    max_reference_audio_mb: Optional[int] = None
+    max_reference_duration_seconds: Optional[int] = None
+    max_voice_audio_bytes_mb: Optional[int] = None
+    max_voice_audio_duration_seconds: Optional[int] = None
+    max_transcribe_audio_bytes_mb: Optional[int] = None
+    max_transcribe_duration_seconds: Optional[int] = None
+    min_sample_rate: Optional[int] = None
+    max_sample_rate: Optional[int] = None
+    max_channels: Optional[int] = None
 
 
 class ApiKeyCreate(BaseModel):

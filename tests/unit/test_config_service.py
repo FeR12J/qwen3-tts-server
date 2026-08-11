@@ -172,3 +172,29 @@ def test_validated_dtype_explicit_float32_cpu(no_cuda, monkeypatch):
     monkeypatch.setattr(settings.runtime, "device", "cpu")
     monkeypatch.setattr(settings.runtime, "dtype", "float32")
     assert cs.validated_dtype() == "float32"
+
+
+# -- Runtime heredado de los grupos estáticos --------------------------------
+
+
+def test_load_runtime_config_seeds_from_static_groups(monkeypatch):
+    """Los ajustes editables se siembran desde los grupos estáticos (fuente
+    de las variables de entorno), y el archivo persistido los reemplaza."""
+    original_runtime = settings.runtime
+    monkeypatch.setattr(settings.limits, "max_channels", 4)
+    monkeypatch.setattr(settings.queue, "max_parallel_inference", 3)
+    monkeypatch.setattr(
+        "services.config_service.load_runtime_file",
+        lambda: {"max_channels": 6},
+    )
+    cs.load_runtime_config()
+    assert settings.runtime.max_channels == 6          # runtime.json gana al seed
+    assert settings.runtime.max_parallel_inference == 3  # seed desde queue
+    assert settings.runtime.max_voice_audio_bytes_mb == (
+        settings.limits.max_voice_audio_bytes // (1024 * 1024)
+    )
+    assert settings.runtime.max_transcribe_audio_bytes_mb == (
+        settings.limits.max_transcribe_audio_bytes // (1024 * 1024)
+    )
+    # Restaurar el singleton al estado previo (load_runtime_config lo reemplaza)
+    settings.runtime = original_runtime

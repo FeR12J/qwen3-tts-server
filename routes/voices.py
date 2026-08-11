@@ -7,7 +7,6 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
-from config.settings import settings
 from security.auth import require_admin
 from security.permissions import require_model_loaded, ensure_voice_cloning_supported
 from security.validation import (
@@ -16,6 +15,7 @@ from security.validation import (
 )
 from schemas.voices import LoadVoiceRequest
 from services.audio_service import SPEECH_SAMPLE_RATE, AudioService
+from services.config_service import get_limits, get_runtime
 from services.gpu_management import prepare_for_tts
 from services.model_manager import GPUOutOfMemoryError
 from services import whisper_service
@@ -35,7 +35,7 @@ def create_voices_routes(app: FastAPI, ctx):
         """Leer, validar y canonicalizar el audio subido (WAV 16 kHz mono
         normalizado). Lanza HTTPException 400 si no es válido."""
         data = await audio.read()
-        sl = settings.limits
+        sl = get_limits()
         try:
             info = ctx.audio.validate(
                 data,
@@ -54,9 +54,9 @@ def create_voices_routes(app: FastAPI, ctx):
         # Reutilizar el numpy array de validate(): evita decodificar dos veces.
         wav, sr = ctx.audio.prepare(info.samples, info.sample_rate, target_sr=SPEECH_SAMPLE_RATE)
         # Normalización del pico a normalization_dbfs (configurable; puede
-        # desactivarse con audio.normalize_reference_audio para preservar la
+        # desactivarse con normalize_reference_audio para preservar la
         # dinámica original del archivo).
-        if settings.audio.normalize_reference_audio:
+        if get_runtime().normalize_reference_audio:
             wav = ctx.audio.normalize(wav)
         return ctx.audio.convert(wav, sr, "wav")
 

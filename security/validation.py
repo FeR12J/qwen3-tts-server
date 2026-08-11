@@ -76,7 +76,48 @@ def validate_config_update(changes: dict, config_service):
             400,
             f"dtype inválido. Válidos: {', '.join(config_service.VALID_DTYPES)}",
         )
+    if "chunking" in changes and changes["chunking"] not in ("sentence", "paragraph"):
+        raise HTTPException(400, "chunking inválido. Válidos: sentence, paragraph")
+    if "normalization_dbfs" in changes and (
+        changes["normalization_dbfs"] is None
+        or not isinstance(changes["normalization_dbfs"], (int, float))
+        or changes["normalization_dbfs"] > 0
+        or changes["normalization_dbfs"] < -60
+    ):
+        raise HTTPException(400, "normalization_dbfs debe ser un valor en dBFS entre -60 y 0")
+    if "max_parallel_inference" in changes and (
+        changes["max_parallel_inference"] is None
+        or not 1 <= changes["max_parallel_inference"] <= 16
+    ):
+        raise HTTPException(400, "max_parallel_inference debe estar entre 1 y 16")
+    for field in (
+        "max_text_characters", "max_estimated_audio_duration_seconds",
+        "max_reference_audio_mb", "max_reference_duration_seconds",
+        "max_voice_audio_bytes_mb", "max_voice_audio_duration_seconds",
+        "max_transcribe_audio_bytes_mb", "max_transcribe_duration_seconds",
+    ):
+        if field in changes and (changes[field] is None or changes[field] <= 0):
+            raise HTTPException(400, f"{field} debe ser mayor que 0")
+    if "generated_audio_ttl_hours" in changes and (
+        changes["generated_audio_ttl_hours"] is None
+        or changes["generated_audio_ttl_hours"] <= 0
+    ):
+        raise HTTPException(400, "generated_audio_ttl_hours debe ser mayor que 0")
+    if "min_sample_rate" in changes and (
+        changes["min_sample_rate"] is None
+        or not 1000 <= changes["min_sample_rate"] <= 384000
+    ):
+        raise HTTPException(400, "min_sample_rate debe estar entre 1000 y 384000 Hz")
+    if "max_sample_rate" in changes:
+        if changes["max_sample_rate"] is None or not 1000 <= changes["max_sample_rate"] <= 384000:
+            raise HTTPException(400, "max_sample_rate debe estar entre 1000 y 384000 Hz")
+        if ("min_sample_rate" in changes and changes["min_sample_rate"] > changes["max_sample_rate"]):
+            raise HTTPException(400, "max_sample_rate no puede ser menor que min_sample_rate")
+    if "max_channels" in changes and (
+        changes["max_channels"] is None or not 1 <= changes["max_channels"] <= 8
+    ):
+        raise HTTPException(400, "max_channels debe estar entre 1 y 8")
     for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts",
-                 "streaming_enabled", "save_audios"):
+                 "streaming_enabled", "save_audios", "normalize_reference_audio"):
         if flag in changes and not isinstance(changes[flag], bool):
             raise HTTPException(400, f"{flag} debe ser true o false")

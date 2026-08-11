@@ -264,13 +264,13 @@ class AudioService:
     def normalize(self, wav, dbfs: float = None) -> np.ndarray:
         """Normalizar el pico de amplitud a ``dbfs`` dBFS.
 
-        Si ``dbfs`` es None, usa settings.audio.normalization_dbfs
-        (por defecto -1 dBFS). Devuelve float32 en [-1, 1]. El silencio se
-        devuelve sin cambios.
+        Si ``dbfs`` es None, usa el valor editable del panel
+        (normalization_dbfs, por defecto -1 dBFS). Devuelve float32 en
+        [-1, 1]. El silencio se devuelve sin cambios.
         """
         if dbfs is None:
-            audio_cfg = getattr(self._config, "audio", None)
-            dbfs = getattr(audio_cfg, "normalization_dbfs", -1.0)
+            from services.config_service import get_runtime
+            dbfs = get_runtime().normalization_dbfs
         wav = np.asarray(wav, dtype="float32")
         peak = float(np.max(np.abs(wav))) if wav.size else 0.0
         if peak < 1e-6:

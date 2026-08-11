@@ -7,9 +7,9 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
-from config.settings import settings
 from security.auth import require_api_key
 from services import whisper_service
+from services.config_service import get_limits
 from services.gpu_management import prepare_for_whisper
 from services.model_manager import GPUOutOfMemoryError
 
@@ -34,7 +34,7 @@ def create_whisper_routes(app: FastAPI, ctx):
             raise HTTPException(400, "Archivo de audio requerido (campo 'audio')")
 
         data = await audio.read()
-        sl = settings.limits
+        sl = get_limits()
         try:
             ctx.audio.validate(
                 data,

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from config.settings import settings
 from services.audio_service import (
     SPEECH_SAMPLE_RATE,
     AudioService,
@@ -137,12 +138,10 @@ def test_normalize_custom_dbfs(service):
     assert float(np.max(np.abs(out))) == pytest.approx(1.0, abs=1e-4)
 
 
-def test_normalize_uses_config_default(service):
-    config = SimpleNamespace(
-        paths=SimpleNamespace(audios_dir="."),
-        audio=SimpleNamespace(normalization_dbfs=-3.0),
-    )
-    svc = AudioService(config, None)
+def test_normalize_uses_config_default(service, monkeypatch):
+    # El valor editable (runtime) es la fuente del dBFS por defecto
+    monkeypatch.setattr(settings.runtime, "normalization_dbfs", -3.0)
+    svc = AudioService(service._config, None)
     out = svc.normalize(_sine(amplitude=0.01))
     assert float(np.max(np.abs(out))) == pytest.approx(10 ** (-3.0 / 20.0), abs=1e-4)
 

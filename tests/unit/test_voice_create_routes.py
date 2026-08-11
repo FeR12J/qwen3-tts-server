@@ -104,10 +104,12 @@ def test_create_voice_invalid_audio_400_without_lock(env):
 def test_create_voice_oversized_audio_rejected_before_gpu(env, monkeypatch):
     """Audio que excede max_voice_audio_bytes: 400 sin cargar modelo ni GPU."""
     from config.settings import settings
-    monkeypatch.setattr(settings.limits, "max_voice_audio_bytes", 1000)
+    # El límite editable (runtime, en MB) es el vigente: 1 MB
+    monkeypatch.setattr(settings.runtime, "max_voice_audio_bytes_mb", 1)
 
     client, queue, calls = env
-    resp = _post_voice(client, _wav_bytes())
+    # ~4 MB de WAV (70 s a 16 kHz mono, 16 bits) > 1 MB
+    resp = _post_voice(client, _wav_bytes(seconds=70))
     assert resp.status_code == 400
     assert "excede" in resp.text
     assert queue.lock_entered is False

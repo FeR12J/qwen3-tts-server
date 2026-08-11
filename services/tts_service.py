@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from schemas.tts import TTSRequest
 from services.audio_service import AudioValidationError
-from services.config_service import get_runtime_config
+from services.config_service import get_runtime_config, get_limits
 from services.model_manager import ModelInfo
 from utils.chunker import TextChunker, TextChunkerError
 
@@ -73,8 +73,7 @@ class TTSService:
     def _check_ref_audio_size(self, wav_path: str):
         """Validar el audio de referencia (tamaño, duración, sample rate,
         canales y contenido completo) antes de usar GPU. Delega en AudioService."""
-        from config.settings import settings
-        limits = settings.limits
+        limits = get_limits()
         try:
             self._audio.validate(
                 wav_path,
@@ -215,18 +214,18 @@ class TTSService:
         if not text:
             raise TTSValidationError("Campo 'text' o 'input' requerido")
 
-        from config.settings import settings
-        if len(text) > settings.limits.max_text_characters:
+        limits = get_limits()
+        if len(text) > limits.max_text_characters:
             raise TTSValidationError(
                 f"Texto demasiado largo: {len(text)} caracteres "
-                f"(máximo configurado: {settings.limits.max_text_characters})."
+                f"(máximo configurado: {limits.max_text_characters})."
             )
 
         estimated = len(text) / CHARS_PER_SECOND
-        if estimated > settings.limits.max_estimated_audio_duration_seconds:
+        if estimated > limits.max_estimated_audio_duration_seconds:
             raise TTSValidationError(
                 f"Audio estimado demasiado largo: ~{estimated:.1f}s "
-                f"(máximo configurado: {settings.limits.max_estimated_audio_duration_seconds}s). "
+                f"(máximo configurado: {limits.max_estimated_audio_duration_seconds}s). "
                 "Reduce la longitud del texto."
             )
         return text
@@ -249,16 +248,16 @@ class TTSService:
     def _make_chunker(self) -> TextChunker:
         """Chunker de textos largos según la configuración.
 
-        - ``limits.max_text_characters``: límite del texto de entrada.
-        - ``text.chunking``: modo de división (sentence | paragraph).
+        - ``max_text_characters`` (runtime): límite del texto de entrada.
+        - ``chunking`` (runtime): modo de división (sentence | paragraph).
         - ``max_text_chars`` (runtime): tamaño máximo de cada fragmento
           generado (editable desde el panel).
         """
-        from config.settings import settings
         rc = get_runtime_config()
+        limits = get_limits()
         return TextChunker(
-            max_characters=settings.limits.max_text_characters,
-            chunking=settings.text.chunking,
+            max_characters=limits.max_text_characters,
+            chunking=rc["chunking"],
             chunk_size=rc["max_text_chars"],
         )
 
