@@ -3,6 +3,7 @@
 
 import os
 import gc
+import time
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -109,10 +110,11 @@ class ModelManager:
     y puede realizar una inferencia válida.
     """
 
-    def __init__(self):
+    def __init__(self, metrics=None):
         # model_id -> {"model", "type", "state", "error", "loaded_at", "device", "dtype"}
         self._registry: dict = {}
         self._active_id = None
+        self._metrics = metrics
         # Último modelo que estuvo activo (para restaurarlo tras descargas
         # automáticas de VRAM, p.ej. al ceder la GPU a Whisper)
         self._last_active_id = None
@@ -239,6 +241,7 @@ class ModelManager:
             raise FileNotFoundError(f"Modelo '{model_id}' no existe en {model_path}")
 
         # Preparar la entrada y marcarla como LOADING
+        load_started = time.perf_counter()
         previous_error = entry.get("error") if entry is not None else None
         if entry is None:
             entry = self._new_entry()
@@ -303,6 +306,10 @@ class ModelManager:
             entry["loaded_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             entry["state"] = ModelState.READY.value
             logger.info(f"Modelo cargado correctamente. Tipo: {model_type}")
+            if self._metrics:
+                self._metrics.model_loaded(
+                    int((time.perf_counter() - load_started) * 1000)
+                )
             info = ModelInfo(
                 model_id,
                 model_type,
@@ -376,6 +383,8 @@ class ModelManager:
         if self._active_id == model_id:
             self._last_active_id = model_id
             self._active_id = None
+        if self._metrics:
+            self._metrics.model_unloaded()
         self._free_entry(entry)
         logger.info(f"Modelo descargado: {model_id}")
 

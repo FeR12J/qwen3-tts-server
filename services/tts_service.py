@@ -352,11 +352,15 @@ class TTSService:
         from services.gpu_management import prepare_for_tts
 
         request_id = self._request_id(http_request)
+        t_request = time.perf_counter()
         text = self._require_text(request)
         self._validate_input_limits(request)
         rc = get_runtime_config()
 
+        t_lock = time.perf_counter()
         async with self._queue.inference_lock():
+            # Tiempo de espera en la cola de inferencia (hasta el turno de GPU)
+            queue_wait_ms = int((time.perf_counter() - t_lock) * 1000)
             # Regla arquitectónica: la validación cara (texto, audio de
             # referencia) ya ocurrió ANTES del lock (_require_text /
             # _validate_input_limits). Dentro del lock solo queda: resolver
@@ -380,7 +384,11 @@ class TTSService:
                 logger, "tts_started", request_id,
                 model=info.model_id, model_type=info.model_type,
                 text_length=len(text), chunks=len(chunks),
+                queue_wait_ms=queue_wait_ms,
             )
+            if self._metrics:
+                self._metrics.tts_started()
+                self._metrics.queue_waited(queue_wait_ms)
             started = time.perf_counter()
             try:
                 if len(chunks) == 1:
@@ -403,13 +411,30 @@ class TTSService:
                 log_event(
                     logger, "tts_failed", request_id,
                     model=info.model_id, duration_ms=duration_ms,
+                    queue_wait_ms=queue_wait_ms,
                 )
+                if self._metrics:
+                    self._metrics.tts_failed()
                 raise
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            audio_duration_ms = int(wav.shape[0] / sr * 1000)
+            if self._metrics:
+                # En síntesis no-streaming el primer byte llega al terminar
+                # la generación: TTFB = duración de la generación.
+                self._metrics.tts_completed(
+                    duration_ms,
+                    audio_duration_ms=audio_duration_ms,
+                    ttfb_ms=duration_ms,
+                )
             log_event(
                 logger, "tts_completed", request_id,
                 model=info.model_id,
-                duration_ms=int((time.perf_counter() - started) * 1000),
-                audio_duration_ms=int(wav.shape[0] / sr * 1000),
+                request_latency_ms=int((time.perf_counter() - t_request) * 1000),
+                duration_ms=duration_ms,
+                audio_duration_ms=audio_duration_ms,
+                rtf=round(duration_ms / audio_duration_ms, 3) if audio_duration_ms else 0.0,
+                ttfb_ms=duration_ms,
+                vram_used_mb=self._metrics.vram_used_mb() if self._metrics else 0,
             )
             logger.info(
                 f"Generación completada (model: {info.model_id}, "
@@ -474,56 +499,84 @@ class TTSService:
         rc = get_runtime_config()
         request_id = self._request_id(http_request)
         text = (request.text or request.input or "").strip()
+        t_request = time.perf_counter()
 
+        t_lock = time.perf_counter()
         async with self._queue.inference_lock():
+            # Tiempo de espera en la cola de inferencia (hasta el turno de GPU)
+            queue_wait_ms = int((time.perf_counter() - t_lock) * 1000)
             await prepare_for_tts(self._models, self._voices, whisper_service)
 
             if rc.get("log_requests", True) and http_request is not None and self._metrics:
                 self._metrics.log_request(http_request, text)
 
+            if self._metrics:
+                self._metrics.tts_started()
+                self._metrics.queue_waited(queue_wait_ms)
             started = time.perf_counter()
             audio_ms_total = 0
-            for index, sentence in enumerate(plan.sentences):
-                info = await self._models.get_active_model()
-                if info is None or info.model_id != plan.info.model_id:
-                    # El modelo cambió mientras se preparaba el stream
-                    info = await self._resolve_model(request)
-                if index == 0:
-                    log_event(
-                        logger, "tts_started", request_id,
-                        model=info.model_id, model_type=info.model_type,
-                        text_length=len(text), chunks=len(plan.sentences),
-                        streaming=True,
+            ttfb_ms = None
+            try:
+                for index, sentence in enumerate(plan.sentences):
+                    info = await self._models.get_active_model()
+                    if info is None or info.model_id != plan.info.model_id:
+                        # El modelo cambió mientras se preparaba el stream
+                        info = await self._resolve_model(request)
+                    if index == 0:
+                        # TTFB: tiempo desde la petición hasta el primer audio
+                        # disponible (la métrica clave para evaluar streaming)
+                        ttfb_ms = int((time.perf_counter() - t_request) * 1000)
+                        log_event(
+                            logger, "tts_started", request_id,
+                            model=info.model_id, model_type=info.model_type,
+                            text_length=len(text), chunks=len(plan.sentences),
+                            streaming=True, queue_wait_ms=queue_wait_ms,
+                        )
+                    chunk_started = time.perf_counter()
+                    wavs, sr = await self._generate_one(request, sentence, info)
+                    audio = self._audio.encode_pcm(wavs[0], sr)
+                    # request_id + chunk_index: nombre único y trazable por
+                    # fragmento (el timestamp solo tiene precisión de 1 s).
+                    self._audio.save(
+                        wavs[0], sr, "tts_stream",
+                        request_id=request_id,
+                        chunk_index=index,
                     )
-                chunk_started = time.perf_counter()
-                wavs, sr = await self._generate_one(request, sentence, info)
-                audio = self._audio.encode_pcm(wavs[0], sr)
-                # request_id + chunk_index: nombre único y trazable por
-                # fragmento (el timestamp solo tiene precisión de 1 s).
-                self._audio.save(
-                    wavs[0], sr, "tts_stream",
-                    request_id=request_id,
-                    chunk_index=index,
-                )
-                log_event(
-                    logger, "tts_chunk_emitted", request_id,
-                    chunk_index=index + 1, total_chunks=len(plan.sentences),
-                    text_length=len(sentence),
-                    duration_ms=int((time.perf_counter() - chunk_started) * 1000),
-                    audio_duration_ms=int(wavs[0].shape[0] / sr * 1000),
-                )
-                audio_ms_total += int(wavs[0].shape[0] / sr * 1000)
-                yield SynthesisResult(
-                    audio=audio,
-                    sample_rate=sr,
-                    model_id=info.model_id,
-                    model_type=info.model_type,
+                    log_event(
+                        logger, "tts_chunk_emitted", request_id,
+                        chunk_index=index + 1, total_chunks=len(plan.sentences),
+                        text_length=len(sentence),
+                        duration_ms=int((time.perf_counter() - chunk_started) * 1000),
+                        audio_duration_ms=int(wavs[0].shape[0] / sr * 1000),
+                        ttfb_ms=ttfb_ms,
+                    )
+                    audio_ms_total += int(wavs[0].shape[0] / sr * 1000)
+                    yield SynthesisResult(
+                        audio=audio,
+                        sample_rate=sr,
+                        model_id=info.model_id,
+                        model_type=info.model_type,
+                    )
+            except Exception:
+                if self._metrics:
+                    self._metrics.tts_failed()
+                raise
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            if self._metrics:
+                self._metrics.tts_completed(
+                    duration_ms,
+                    audio_duration_ms=audio_ms_total,
+                    ttfb_ms=ttfb_ms,
                 )
             log_event(
                 logger, "tts_completed", request_id,
                 model=plan.info.model_id,
-                duration_ms=int((time.perf_counter() - started) * 1000),
+                request_latency_ms=int((time.perf_counter() - t_request) * 1000),
+                duration_ms=duration_ms,
                 audio_duration_ms=audio_ms_total,
+                rtf=round(duration_ms / audio_ms_total, 3) if audio_ms_total else 0.0,
+                ttfb_ms=ttfb_ms,
+                vram_used_mb=self._metrics.vram_used_mb() if self._metrics else 0,
                 streaming=True,
             )
 

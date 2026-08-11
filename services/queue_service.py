@@ -92,6 +92,13 @@ class QueueService:
 
     # -- Cola interna ------------------------------------------------------
 
+    @property
+    def queue_size(self) -> int:
+        """Peticiones actualmente en espera en la cola interna (0 si desactivada)."""
+        if self._queue is None:
+            return 0
+        return self._queue.qsize()
+
     def start(self):
         """Arrancar los workers de la cola (llamado en el inicio del servidor).
 

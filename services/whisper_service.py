@@ -41,8 +41,9 @@ class WhisperService:
     asíncrona y no bloquea el event loop.
     """
 
-    def __init__(self, audio_service: AudioService):
+    def __init__(self, audio_service: AudioService, metrics=None):
         self._audio = audio_service
+        self._metrics = metrics
         self._model = None
         self._processor = None
         self._model_name = None
@@ -99,6 +100,8 @@ class WhisperService:
         inferencia se ejecuta en un hilo (no bloquea el event loop); la
         carga del modelo es lazy y automática.
         """
+        if self._metrics is not None:
+            self._metrics.whisper_requested()
         return await asyncio.to_thread(self._transcribe_sync, audio, language, task)
 
     def _transcribe_sync(self, audio, language, task) -> dict:
@@ -197,13 +200,13 @@ def _get() -> WhisperService:
     return _instance
 
 
-def configure(audio_service: AudioService) -> WhisperService:
-    """Inyectar el AudioService en el singleton (llamado en build_context).
+def configure(audio_service: AudioService, metrics=None) -> WhisperService:
+    """Inyectar el AudioService (y métricas opcionales) en el singleton.
 
     Devuelve la instancia configurada (la misma que usan las rutas).
     """
     global _instance
-    _instance = WhisperService(audio_service)
+    _instance = WhisperService(audio_service, metrics=metrics)
     return _instance
 
 

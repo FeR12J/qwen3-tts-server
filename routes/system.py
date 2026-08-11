@@ -68,6 +68,11 @@ def create_system_routes(app: FastAPI, ctx):
     async def health():
         return {"status": "ok"}
 
+    @app.get("/metrics")
+    async def metrics():
+        """Métricas sencillas del servidor (JSON; Prometheus opcional)."""
+        return ctx.metrics.get_metrics()
+
     @app.get("/ready")
     async def ready():
         return {

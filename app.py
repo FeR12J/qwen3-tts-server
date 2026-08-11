@@ -60,12 +60,12 @@ def build_context() -> AppContext:
         enabled=settings.runtime.queue_enabled,
         max_size=settings.runtime.queue_max_size,
     )
-    models = ModelManager()
+    metrics = MetricsService(settings, queue)
+    models = ModelManager(metrics)
     voices = VoiceManager(models)
     audio = AudioService(settings, queue)
-    metrics = MetricsService(settings)
     tts = TTSService(settings, queue, models, voices, audio, metrics)
-    configure_whisper(audio)
+    configure_whisper(audio, metrics)
     return AppContext(
         config=settings,
         queue=queue,

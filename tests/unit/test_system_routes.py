@@ -41,6 +41,23 @@ class DummyMetrics:
     def vram_available_gb(self):
         return 0.0
 
+    def get_metrics(self):
+        return {
+            "tts_requests": 120,
+            "tts_errors": 3,
+            "tts_active": 1,
+            "tts_queue_size": 0,
+            "whisper_requests": 42,
+            "model_loads": 7,
+            "model_unloads": 6,
+            "average_tts_ms": 843,
+            "average_queue_wait_ms": 120,
+            "average_model_load_ms": 3500,
+            "average_rtf": 0.16,
+            "average_ttfb_ms": 780,
+            "average_vram_used_mb": 4100,
+        }
+
 
 class Ctx:
     def __init__(self, models):
@@ -97,3 +114,24 @@ def test_version_shape(client):
     assert data["version"] == VERSION
     for key in ("qwen_tts", "torch", "transformers", "cuda"):
         assert key in data
+
+
+def test_metrics_shape(client):
+    """GET /metrics devuelve las métricas sencillas esperadas."""
+    res = client.get("/metrics")
+    assert res.status_code == 200
+    assert res.json() == {
+        "tts_requests": 120,
+        "tts_errors": 3,
+        "tts_active": 1,
+        "tts_queue_size": 0,
+        "whisper_requests": 42,
+        "model_loads": 7,
+        "model_unloads": 6,
+        "average_tts_ms": 843,
+        "average_queue_wait_ms": 120,
+        "average_model_load_ms": 3500,
+        "average_rtf": 0.16,
+        "average_ttfb_ms": 780,
+        "average_vram_used_mb": 4100,
+    }
