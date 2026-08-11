@@ -247,3 +247,62 @@ def test_encode_pcm(service):
     pcm = service.encode_pcm(wav, SR)
     assert len(pcm) == len(wav) * 2
     assert pcm[:2] != pcm[2:4]  # no es silencio
+
+
+def _touch(path, age_seconds):
+    import os
+    import time
+    old = time.time() - age_seconds
+    os.utime(path, (old, old))
+
+
+def test_cleanup_old_removes_only_expired(service, tmp_path, monkeypatch):
+    config = SimpleNamespace(paths=SimpleNamespace(audios_dir=str(tmp_path)))
+    svc = AudioService(config, None)
+    fresh = tmp_path / "tts_fresh.wav"
+    expired = tmp_path / "tts_expired.wav"
+    sub = tmp_path / "subdir"
+    sub.mkdir()
+    for p in (fresh, expired):
+        p.write_bytes(b"RIFFxxxx")
+    (sub / "tts_anidado.wav").write_bytes(b"RIFFxxxx")
+    _touch(str(expired), 3 * 3600)
+    _touch(str(fresh), 1 * 3600)
+
+    removed = svc.cleanup_old(2 * 3600)
+    assert removed == 1
+    assert expired.exists() is False
+    assert fresh.exists() is True
+    assert (sub / "tts_anidado.wav").exists() is True
+
+
+def test_cleanup_old_ttl_zero_is_noop(service, tmp_path):
+    config = SimpleNamespace(paths=SimpleNamespace(audios_dir=str(tmp_path)))
+    svc = AudioService(config, None)
+    (tmp_path / "a.wav").write_bytes(b"x")
+    assert svc.cleanup_old(0) == 0
+    assert (tmp_path / "a.wav").exists()
+
+
+def test_save_skips_when_save_audios_disabled(service, tmp_path, monkeypatch):
+    """Por defecto (save_audios=false) el audio NO se persiste: se devuelve por HTTP."""
+    from services import config_service
+    monkeypatch.setattr(config_service.settings.runtime, "save_audios", False)
+    config = SimpleNamespace(paths=SimpleNamespace(audios_dir=str(tmp_path)))
+    svc = AudioService(config, None)
+    assert svc.save(_sine(), SR, "tts") == ""
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_save_writes_when_save_audios_enabled(service, tmp_path, monkeypatch):
+    import os
+    from services import config_service
+    monkeypatch.setattr(config_service.settings.runtime, "save_audios", True)
+    config = SimpleNamespace(paths=SimpleNamespace(audios_dir=str(tmp_path)))
+    svc = AudioService(config, None)
+    path = svc.save(_sine(), SR, "tts")
+    assert path.startswith(str(tmp_path))
+    assert os.path.exists(path)
+    audio, sr = svc.load(path)
+    assert sr == SR and audio.shape[0] == int(SR * DURATION)
+

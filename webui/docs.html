@@ -240,7 +240,7 @@ API key: qt-tu-clave-aqui   (si las claves están activadas)</pre>
   "log_level": "INFO",             // DEBUG | INFO | WARNING | ERROR
   "log_requests": true,            // registrar peticiones en requests.log
   "streaming_enabled": true,       // habilitar el endpoint /tts/stream
-  "save_audios": true,             // guardar copia de los audios generados en audios/
+  "save_audios": false,            // false (por defecto) | true: guardar copia en audios/
   "api_keys_enabled": false,       // exigir clave API en el servicio
   "device": "auto"                 // auto | cpu | cuda:0 | cuda:1 | ...
 }</pre>
@@ -262,7 +262,7 @@ curl -X POST http://localhost:8001/webui/api/apikeys/&lt;id&gt;/toggle
 curl -X DELETE http://localhost:8001/webui/api/apikeys/&lt;id&gt;</pre>
 
 <h2>Notas</h2>
-<div class="alert">El audio se devuelve como <code>audio/wav</code>. El servidor guarda una copia de cada generación en <code>audios/</code> (los antiguos se limpian automáticamente al arrancar); se puede desactivar con <code>save_audios</code>.</div>
+<div class="alert">El audio se devuelve como <code>audio/wav</code>. Por defecto no se guarda en disco; con <code>save_audios</code> se guarda una copia en <code>audios/</code>. Los audios con más de <code>storage.generated_audio_ttl_hours</code> (por defecto 24 h) se limpian automáticamente al arrancar y cada hora.</div>
 <div class="alert warn">Las claves se almacenan como hash SHA-256. Si pierdes una clave, elimínala y crea otra.</div>
 <div class="alert">Documentación interactiva del framework disponible en <a href="/docs" target="_blank">/docs</a> (Swagger UI).</div>
 

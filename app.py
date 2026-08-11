@@ -79,6 +79,26 @@ def register_routes(app: FastAPI, ctx: AppContext):
     create_webui_routes(app, ctx)
 
 
+# Intervalo de la limpieza periódica de audios generados (1 hora)
+AUDIO_CLEANUP_INTERVAL_SECONDS = 60 * 60
+
+
+async def audio_cleanup_loop(ctx: AppContext):
+    """Limpieza automática periódica del directorio de audios.
+
+    Elimina los audios generados con más de storage.generated_audio_ttl_hours
+    horas, para que el directorio no crezca indefinidamente.
+    """
+    while True:
+        await asyncio.sleep(AUDIO_CLEANUP_INTERVAL_SECONDS)
+        try:
+            removed = ctx.audio.cleanup_old(settings.storage.generated_audio_ttl_hours * 3600)
+            if removed:
+                logger.info(f"Limpieza periódica: {removed} audio(s) antiguo(s) eliminados")
+        except Exception as e:
+            logger.warning(f"Error en la limpieza periódica de audios: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida de la aplicación."""
@@ -86,8 +106,12 @@ async def lifespan(app: FastAPI):
     load_runtime_config()
     apply_log_level()
     register_routes(app, ctx)
-    await startup_procedure(ctx)
-    yield
+    cleanup_task = asyncio.create_task(audio_cleanup_loop(ctx))
+    try:
+        await startup_procedure(ctx)
+        yield
+    finally:
+        cleanup_task.cancel()
 
 
 # Inicializar aplicación FastAPI
@@ -130,8 +154,8 @@ async def startup_procedure(ctx: AppContext):
     print("Iniciando qwen3-tts server")
     print("." * 60)
 
-    # Limpiar audios antiguos
-    ctx.audio.cleanup_old(settings.limits.audios_max_age_days)
+    # Limpiar audios generados más antiguos que el TTL configurado
+    ctx.audio.cleanup_old(settings.storage.generated_audio_ttl_hours * 3600)
 
     # Modelos locales
     local_models = ctx.models.list_local_models()

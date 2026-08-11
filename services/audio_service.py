@@ -473,7 +473,7 @@ class AudioService:
         """
         fmt = str(format).lower().lstrip(".")
         from services.config_service import get_runtime_config
-        if not get_runtime_config().get("save_audios", True):
+        if not get_runtime_config().get("save_audios", False):
             logger.info(f"Guardado de audios desactivado (se omite {prefix}_*.{fmt})")
             return ""
         dt = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -483,11 +483,15 @@ class AudioService:
         logger.info(f"Audio guardado: {path}")
         return path
 
-    def cleanup_old(self, max_age_days: int) -> int:
-        """Eliminar audios generados hace más de max_age_days días."""
-        if max_age_days <= 0:
+    def cleanup_old(self, max_age_seconds: float) -> int:
+        """Eliminar audios generados hace más de max_age_seconds segundos.
+
+        Es la base de la limpieza automática (storage.generated_audio_ttl_hours):
+        impide que el directorio de audios crezca indefinidamente.
+        """
+        if max_age_seconds <= 0:
             return 0
-        cutoff = time.time() - max_age_days * 86400
+        cutoff = time.time() - max_age_seconds
         removed = 0
         try:
             for fname in os.listdir(self._config.paths.audios_dir):
@@ -501,7 +505,7 @@ class AudioService:
         except OSError as e:
             logger.warning(f"Error leyendo directorio de audios {self._config.paths.audios_dir}: {e}")
         if removed:
-            logger.info(f"Limpieza: {removed} audio(s) antiguo(s) eliminado(s) de {self._config.paths.audios_dir}")
+            logger.info(f"Limpieza: {removed} audio(s) antiguo(s) eliminados de {self._config.paths.audios_dir}")
         return removed
 
     # -- Reproducción local -------------------------------------------------

@@ -109,7 +109,6 @@ class LimitsSettings(BaseModel):
       aceptado en audios de entrada.
     - ``max_channels``: canales máximo admitido en audios de entrada.
     """
-    audios_max_age_days: int = 7
     max_voice_audio_bytes: int = 50 * 1024 * 1024
     max_transcribe_audio_bytes: int = 100 * 1024 * 1024
     max_text_characters: int = 10000
@@ -121,6 +120,16 @@ class LimitsSettings(BaseModel):
     min_sample_rate: int = 8000
     max_sample_rate: int = 96000
     max_channels: int = 2
+
+
+class StorageSettings(BaseModel):
+    """Almacenamiento de audio generado.
+
+    - ``generated_audio_ttl_hours``: vida máxima (horas) de los audios
+      generados en ``audios/``; la limpieza automática elimina los que
+      superen esta edad (en el arranque y periódicamente).
+    """
+    generated_audio_ttl_hours: float = 24
 
 
 class QueueSettings(BaseModel):
@@ -156,8 +165,9 @@ class RuntimeSettings(BaseModel):
     api_keys_enabled: bool = False
     # Endpoint /tts/stream habilitado (generación por frases en streaming)
     streaming_enabled: bool = True
-    # Guardar una copia de cada audio generado en el directorio audios/
-    save_audios: bool = True
+    # Por defecto el audio se devuelve por HTTP sin persistirlo; activar
+    # save_audios desde el panel (o runtime.json) guarda una copia en audios/
+    save_audios: bool = False
     # Dispositivo de inferencia: "auto" (GPU si hay), "cuda:N" o "cpu"
     device: str = "auto"
     # dtype: "auto" (según GPU), "bfloat16", "float16" o "float32"
@@ -202,6 +212,7 @@ class Settings(BaseSettings):
     whisper: WhisperSettings = WhisperSettings()
     cors: CorsSettings = CorsSettings()
     limits: LimitsSettings = LimitsSettings()
+    storage: StorageSettings = StorageSettings()
     queue: QueueSettings = QueueSettings()
     auth: AuthSettings = AuthSettings()
     logging: LoggingSettings = LoggingSettings()
