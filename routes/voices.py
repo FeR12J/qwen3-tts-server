@@ -37,7 +37,7 @@ def create_voices_routes(app: FastAPI, ctx):
         data = await audio.read()
         sl = settings.limits
         try:
-            ctx.audio.validate(
+            info = ctx.audio.validate(
                 data,
                 max_bytes=sl.max_voice_audio_bytes,
                 max_duration=sl.max_voice_audio_duration_seconds,
@@ -51,17 +51,25 @@ def create_voices_routes(app: FastAPI, ctx):
             )
         except ValueError as e:
             raise _validation_error(e)
-        wav, sr = ctx.audio.load(data, target_sr=SPEECH_SAMPLE_RATE)
-        return ctx.audio.convert(ctx.audio.normalize(wav), sr, "wav")
+        # Reutilizar el numpy array de validate(): evita decodificar dos veces.
+        wav, sr = ctx.audio.prepare(info.samples, info.sample_rate, target_sr=SPEECH_SAMPLE_RATE)
+        # Normalización del pico a normalization_dbfs (configurable; puede
+        # desactivarse con audio.normalize_reference_audio para preservar la
+        # dinámica original del archivo).
+        if settings.audio.normalize_reference_audio:
+            wav = ctx.audio.normalize(wav)
+        return ctx.audio.convert(wav, sr, "wav")
 
     @app.post("/voice/load", dependencies=[Depends(require_admin)])
     async def load_voice(req_body: LoadVoiceRequest):
+        # Validación sin GPU: no mantener ocupado el inference_lock.
+        voice_name = req_body.voice_name.strip()
+        reject_path_traversal(voice_name, "voice_name")
+        validate_voice_name(voice_name)
+
         async with ctx.queue.inference_lock():
             await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             await require_model_loaded(ctx.models)
-            voice_name = req_body.voice_name.strip()
-            reject_path_traversal(voice_name, "voice_name")
-            validate_voice_name(voice_name)
             await ensure_voice_cloning_supported(ctx.models)
 
             try:
@@ -103,18 +111,20 @@ def create_voices_routes(app: FastAPI, ctx):
         mono), la transcripción como reference.txt y los metadatos en
         metadata.json. La voz se aplica como clon activo.
         """
+        # Validaciones sin GPU: no mantener ocupado el inference_lock
+        # mientras se valida/decodifica el audio subido.
+        voice_name = voice_name.strip()
+        reject_path_traversal(voice_name, "voice_name")
+        validate_voice_name(voice_name)
+        if not text.strip():
+            raise HTTPException(400, "La transcripción no puede estar vacía")
+        wav_bytes = await _read_and_validate_audio(audio)
+
+        # Sección crítica (GPU): cargar modelo y guardar/aplicar la voz.
         async with ctx.queue.inference_lock():
             await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             await require_model_loaded(ctx.models)
-
-            voice_name = voice_name.strip()
-            reject_path_traversal(voice_name, "voice_name")
-            validate_voice_name(voice_name)
-            if not text.strip():
-                raise HTTPException(400, "La transcripción no puede estar vacía")
             await ensure_voice_cloning_supported(ctx.models)
-
-            wav_bytes = await _read_and_validate_audio(audio)
 
             try:
                 created_id = await ctx.voices.create(
@@ -170,20 +180,23 @@ def create_voices_routes(app: FastAPI, ctx):
         Solo se actualizan los campos enviados. Si se cambia el audio o la
         transcripción y la voz es el clon activo, se regenera el prompt.
         """
-        async with ctx.queue.inference_lock():
-            reject_path_traversal(voice_id, "voice_id")
-            if name is not None:
-                name = name.strip()
-                reject_path_traversal(name, "name")
-                validate_voice_name(name)
-            if text is not None and not text.strip():
-                raise HTTPException(400, "La transcripción no puede estar vacía")
+        # Validaciones sin GPU: no mantener ocupado el inference_lock.
+        reject_path_traversal(voice_id, "voice_id")
+        if name is not None:
+            name = name.strip()
+            reject_path_traversal(name, "name")
+            validate_voice_name(name)
+        if text is not None and not text.strip():
+            raise HTTPException(400, "La transcripción no puede estar vacía")
+        wav_bytes = None
+        if audio is not None:
+            wav_bytes = await _read_and_validate_audio(audio)
 
-            wav_bytes = None
+        # Sección crítica (GPU): cargar modelo y actualizar/aplicar la voz.
+        async with ctx.queue.inference_lock():
             if audio is not None:
                 await require_model_loaded(ctx.models)
                 await ensure_voice_cloning_supported(ctx.models)
-                wav_bytes = await _read_and_validate_audio(audio)
 
             try:
                 updated = await ctx.voices.update(

@@ -12,13 +12,35 @@ Modos configurables:
 
 - ``sentence``: cada fragmento es un grupo de frases completas del mismo
   párrafo (los párrafos nunca se mezclan dentro de un fragmento). Es el modo
-  recomendado para streaming: el audio llega frase a frase.
+  recomendado para chunked streaming: el audio llega frase a frase.
 - ``paragraph``: cada fragmento es uno o más párrafos completos; solo los
   párrafos que exceden el tamaño máximo se subdividen por frases/palabras.
 
 ``max_characters`` es la longitud máxima del texto de entrada: si se excede,
 chunk() lanza TextChunkerError. ``chunk_size`` es la longitud máxima de cada
 fragmento de salida.
+
+IMPORTANTE (streaming por fragmentos):
+- Each chunk is synthesized independently.
+- Chunking reduces memory usage and enables incremental delivery,
+  but does not preserve acoustic/prosodic state between chunks.
+- El modelo se reinicia entre fragmentos: la voz/entonação es coherente
+  dentro de cada chunk, pero no hay continuidad prosódica entre ellos.
+  No es "true streaming" continuo, sino "chunked streaming".
+
+``chunk_size`` es un trade-off CALIDAD <-> LATENCIA <-> VRAM (no solo
+rendimiento):
+
+- Larger chunk_size generally improves:
+  - voice consistency
+  - prosodic continuity
+  - sentence-level intonation
+- Smaller chunk_size generally improves:
+  - time to first audio chunk
+  - memory usage
+
+Regla práctica: elegir el chunk_size más grande que cumpla el objetivo de
+latencia/VRAM, porque la calidad de continuidad mejora con chunks grandes.
 """
 
 import re

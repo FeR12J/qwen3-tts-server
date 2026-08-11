@@ -48,7 +48,11 @@ def create_tts_routes(app: FastAPI, ctx):
 
     @app.post("/tts/stream", dependencies=[Depends(require_api_key)])
     async def tts_stream_endpoint(req_body: TTSRequest, req: Request):
-        """Generar TTS en streaming real: audio por frases en cuanto terminan.
+        """Generar TTS chunked streaming (incremental por fragmentos): audio
+        por frases en cuanto terminan.
+
+        Cada fragmento es una generación independiente (el modelo se reinicia
+        entre chunks): no hay continuidad prosódica entre frases.
 
         - output_format="wav": WAV streaming (cabecera con tamaño indeterminado
           + chunks PCM). Reproducible con `curl | ffplay -` o `curl > archivo`.

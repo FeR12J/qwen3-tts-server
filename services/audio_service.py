@@ -16,7 +16,9 @@ import subprocess
 import tempfile
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -34,9 +36,6 @@ TTS_SAMPLE_RATE = 24000
 # Frecuencia de muestreo canónica para voz de referencia y Whisper (16 kHz)
 SPEECH_SAMPLE_RATE = 16000
 
-# Pico de normalización de amplitud (-1 dBFS)
-NORMALIZATION_DBFS = -1.0
-
 
 class AudioValidationError(ValueError):
     """Audio inválido, no soportado o que no cumple los límites.
@@ -44,6 +43,30 @@ class AudioValidationError(ValueError):
     Hereda de ValueError: las capas HTTP que ya traducen ValueError a 400
     lo manejan sin cambios.
     """
+
+
+@dataclass
+class AudioData:
+    """Resultado de AudioService.validate().
+
+    Distingue validación de decodificación: validate() comprueba tamaño,
+    formato, duración, sample rate, canales y decodificabilidad; si el
+    llamador necesita el contenido decodificado, se devuelve aquí (una sola
+    decodificación, reutilizable), evitando que un load() posterior
+    decodifique otra vez.
+
+    - ``samples``: numpy array float32 con el contenido decodificado, o None
+      si no se decodificó (decode=False y formato reconocible por cabecera).
+    - ``sample_rate`` / ``channels`` / ``duration`` / ``format``: propiedades
+      del audio (formato nativo, canales originales).
+    - ``size_bytes``: tamaño del archivo original.
+    """
+    format: str
+    sample_rate: int
+    channels: int
+    duration: float
+    size_bytes: int
+    samples: Optional[np.ndarray] = None
 
 
 class AudioService:
@@ -136,6 +159,16 @@ class AudioService:
         solo canal.
         """
         audio, sr = self._decode_native(source)
+        return self.prepare(audio, sr, target_sr, mono)
+
+    def prepare(self, audio, sr, target_sr=None, mono: bool = True) -> tuple:
+        """Post-procesar audio ya decodificado: mezclar a mono y remuestrear.
+
+        Produce el mismo resultado que load() pero sin re-decodificar;
+        pensado para reutilizar el numpy array devuelto por
+        validate(decode=True).
+        """
+        audio = np.asarray(audio, dtype="float32")
         if mono and audio.ndim > 1:
             audio = audio.mean(axis=1)
         if target_sr is not None and sr != target_sr:
@@ -145,12 +178,13 @@ class AudioService:
 
     # -- Información -------------------------------------------------------
 
-    def _probe(self, source) -> dict:
+    def _probe(self, source, decoded=None) -> dict:
         """Información del audio sin decodificarlo por completo.
 
         Devuelve {format, sample_rate, channels, duration} (duración en
         segundos). Usa la cabecera (soundfile) o ffprobe; como último
-        recurso, decodifica.
+        recurso, decodifica (reutilizando ``decoded`` si se proporciona,
+        para no decodificar dos veces).
         """
         data = self._as_bytes(source)
         try:
@@ -196,8 +230,12 @@ class AudioService:
                         "duration": duration,
                     }
 
-        # Último recurso: decodificar y medir.
-        audio, sr = self._decode_native(data)
+        # Último recurso: decodificar y medir (sin re-decodificar si ya hay
+        # contenido decodificado).
+        if decoded is None:
+            audio, sr = self._decode_native(data)
+        else:
+            audio, sr = decoded
         return {
             "format": "audio",
             "sample_rate": int(sr),
@@ -211,16 +249,21 @@ class AudioService:
 
     # -- Normalización -----------------------------------------------------
 
-    def normalize(self, wav) -> np.ndarray:
-        """Normalizar el pico de amplitud a -1 dBFS. Devuelve float32 en [-1, 1].
+    def normalize(self, wav, dbfs: float = None) -> np.ndarray:
+        """Normalizar el pico de amplitud a ``dbfs`` dBFS.
 
-        El silencio se devuelve sin cambios.
+        Si ``dbfs`` es None, usa settings.audio.normalization_dbfs
+        (por defecto -1 dBFS). Devuelve float32 en [-1, 1]. El silencio se
+        devuelve sin cambios.
         """
+        if dbfs is None:
+            audio_cfg = getattr(self._config, "audio", None)
+            dbfs = getattr(audio_cfg, "normalization_dbfs", -1.0)
         wav = np.asarray(wav, dtype="float32")
         peak = float(np.max(np.abs(wav))) if wav.size else 0.0
         if peak < 1e-6:
             return wav
-        target = 10 ** (NORMALIZATION_DBFS / 20.0)
+        target = 10 ** (dbfs / 20.0)
         return np.clip(wav * (target / peak), -1.0, 1.0)
 
     # -- Validación --------------------------------------------------------
@@ -266,8 +309,8 @@ class AudioService:
     def validate(self, source, max_bytes=None, max_duration=None,
                  formats=None, filename=None, content_type=None,
                  min_sample_rate=None, max_sample_rate=None,
-                 max_channels=None, decode=False) -> dict:
-        """Validar una fuente de audio y devolver su información.
+                 max_channels=None, decode=False) -> AudioData:
+        """Validar una fuente de audio y devolver el resultado (AudioData).
 
         Comprueba (sin confiar en la extensión): que no esté vacía, el
         tamaño (max_bytes), el tipo MIME declarado (content_type), que el
@@ -276,8 +319,13 @@ class AudioService:
         sample rate y el número de canales, y que el audio sea decodificable
         (decode=True valida el contenido completo, antes de consumir GPU).
 
-        Lanza AudioValidationError si no cumple. Devuelve {format,
-        sample_rate, channels, duration, size_bytes}.
+        Validación y decodificación van separadas: el contenido se decodifica
+        UNA sola vez (cuando hace falta por decode=True o por falta de firma
+        reconocible) y se devuelve en AudioData.samples, que los llamadores
+        pueden consumir sin necesidad de un load() posterior (que volvería a
+        decodificar).
+
+        Lanza AudioValidationError si no cumple.
         """
         data = self._as_bytes(source)
         size = len(data)
@@ -324,13 +372,33 @@ class AudioService:
                 f"El contenido real del archivo es {detected}, no '{expected}' "
                 "(la extensión/MIME no coinciden con el contenido)"
             )
-        if detected is None and not self._decodable(data):
-            raise AudioValidationError(
-                "El archivo no es un audio válido o está corrupto. "
-                f"Formatos soportados: {', '.join(self.FORMATS)}"
-            )
 
-        info = self._probe(data)
+        # Decodificación única: la necesitan los archivos sin firma
+        # reconocible (para validar contenido) y decode=True (para validar
+        # el contenido completo antes de la GPU).
+        decoded = None
+        if detected is None or decode:
+            audio, sr = self._decode_native(data)
+            if audio.shape[0] == 0:
+                raise AudioValidationError(
+                    "El archivo de audio está corrupto o solo contiene la cabecera "
+                    "(no hay datos de audio)"
+                )
+            decoded = (audio, int(sr))
+
+        # Información: cabecera (si hay formato reconocible) o, sin firma,
+        # derivada del audio ya decodificado (sin decodificar de nuevo).
+        if decoded is not None and detected is None:
+            audio, sr = decoded
+            info = {
+                "format": "audio",
+                "sample_rate": int(sr),
+                "channels": 2 if audio.ndim > 1 else 1,
+                "duration": float(audio.shape[0] / sr),
+            }
+        else:
+            info = self._probe(data, decoded=decoded)
+
         if max_duration is not None and info["duration"] > max_duration:
             raise AudioValidationError(
                 f"El audio excede la duración máxima de {max_duration:.0f}s "
@@ -351,24 +419,14 @@ class AudioService:
                 f"Demasiados canales: {info['channels']} "
                 f"(máximo admitido: {max_channels})"
             )
-        if decode:
-            # Decodificación completa: rechaza archivos corruptos o sin
-            # datos reales (solo cabecera) antes de que la GPU los consuma.
-            audio, _ = self._decode_native(data)
-            if audio.shape[0] == 0:
-                raise AudioValidationError(
-                    "El archivo de audio está corrupto o solo contiene la cabecera "
-                    "(no hay datos de audio)"
-                )
-        return {**info, "size_bytes": size}
-
-    def _decodable(self, data: bytes) -> bool:
-        """¿Es decodificable? (para archivos sin bytes mágicos reconocibles)."""
-        try:
-            self._decode_native(data)
-            return True
-        except AudioValidationError:
-            return False
+        return AudioData(
+            format=info["format"],
+            sample_rate=info["sample_rate"],
+            channels=info["channels"],
+            duration=info["duration"],
+            size_bytes=size,
+            samples=decoded[0] if decoded is not None else None,
+        )
 
     # -- Conversión --------------------------------------------------------
 

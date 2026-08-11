@@ -65,7 +65,7 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
     <tr><td><span class="method m-get">GET</span></td><td><code>/version</code></td><td>Versión del servidor y de las librerías (<code>qwen-tts</code>, <code>torch</code>, <code>transformers</code>, <code>cuda</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/</code></td><td>Estado del servidor (modelo actual, voice cloning, VRAM)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts</code></td><td>Generar audio WAV (texto, language, speaker, instruct)</td><td>Sí</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/tts/stream</code></td><td>Generar audio en streaming real: emite cada frase en cuanto se genera (WAV o PCM)</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/tts/stream</code></td><td>Chunked streaming: emite cada frase en cuanto se genera (WAV o PCM)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/play</code></td><td>Generar y reproducir el audio en el equipo del servidor</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/audio/speech</code></td><td>Generar audio compatible con OpenWebUI (text o input)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/model/load</code></td><td>Cargar un modelo local <code>{ "model_id": "..." }</code></td><td>Admin</td></tr>
@@ -121,6 +121,7 @@ curl -X POST http://localhost:8001/voice/unload</pre>
 
 <h3>Crear una voz nueva (subiendo archivos)</h3>
 <p>Se suben el audio (wav, mp3, flac, ogg, m4a) y su transcripción con <code>multipart/form-data</code>. El audio se valida (MIME, contenido, duración, sample rate, canales), se normaliza a WAV 16 kHz mono y se guarda en <code>voices/&lt;voice_id&gt;/</code> junto a <code>metadata.json</code> y <code>reference.txt</code>. La voz se clona automáticamente. El <code>voice_id</code> lo genera el servidor (ej: <code>voice_7f32a1</code>): nunca se aceptan rutas ni ids del cliente; el nombre visible (<code>voice_name</code>) es solo metadata. El campo <code>voice</code> de las peticiones TTS acepta únicamente el <code>voice_id</code> o el nombre de una voz local: el servidor resuelve internamente la ruta a <code>reference.wav</code>/<code>reference.txt</code> y rechaza cualquier intento de path traversal (<code>../</code>, <code>/etc/</code>, <code>C:\</code>, ...).</p>
+<p>La normalización del pico de amplitud es configurable: <code>audio.normalize_reference_audio</code> (por defecto <code>true</code>) normaliza a <code>audio.normalization_dbfs</code> dBFS (por defecto <code>-1.0</code>). Poniendo <code>normalize_reference_audio: false</code> se preserva exactamente la dinámica original del audio subido.</p>
 <pre>curl -X POST http://localhost:8001/voice/create \
   -H "X-API-Key: qt-tu-clave-aqui" \
   -F "voice_name=Maria" \
@@ -176,7 +177,8 @@ with open("audio.wav", "wb") as f:
 print("Audio guardado en audio.wav")</pre>
 
 <h2>Streaming</h2>
-<p><code>POST /tts/stream</code> genera audio <b>en streaming real</b>: divide el texto en frases y emite cada una en cuanto termina de generarse, sin esperar a todo el texto. La primera frase llega en la primera generación; no se trata de un WAV completo troceado después.</p>
+<p><code>POST /tts/stream</code> ofrece <b>chunked streaming</b> (streaming por fragmentos / entrega incremental): divide el texto en frases y emite cada una en cuanto termina de generarse, sin esperar a todo el texto. La primera frase llega en la primera generación; no se trata de un WAV completo troceado después.</p>
+<p><b>Importante:</b> cada fragmento es una <b>generación independiente</b>. El chunking reduce el uso de memoria y permite la entrega incremental, pero el modelo se reinicia entre fragmentos y no se preserva el estado acústico/prosódico entre ellos: la entonación y continuidad de la voz son coherentes dentro de cada chunk, pero no entre chunks. No es "true streaming" continuo.</p>
 <p>Formatos: <code>output_format: "wav"</code> (por defecto, WAV streaming con cabecera de tamaño indeterminado) o <code>output_format: "pcm"</code> (PCM 16-bit LE; la frecuencia se indica en la cabecera <code>X-Audio-Rate</code>).</p>
 <pre># Reproducir en tiempo real (aplay espera el flujo completo)
 curl -N -X POST http://localhost:8001/tts/stream \
@@ -192,14 +194,15 @@ curl -N -X POST http://localhost:8001/tts/stream \
   -H "X-API-Key: qt-tu-clave-aqui" \
   | aplay -r 24000 -f S16_LE -c 1</pre>
 <p>Las frases se dividen respetando abreviaturas (<code>Sr.</code>) y decimales (<code>3.14</code>); el límite de caracteres por frase es <code>max_text_chars</code>. El primer byte tarda lo que tarda la primera frase; el resto llega frase a frase.</p>
+<p><code>max_text_chars</code> (tamaño de fragmento) no es solo un parámetro de rendimiento: es un trade-off <b>CALIDAD &lt;-&gt; LATENCIA &lt;-&gt; VRAM</b>. Fragmentos más grandes generalmente mejoran la consistencia de la voz, la continuidad prosódica y la entonación a nivel de frase (cada fragmento es una generación independiente); fragmentos más pequeños mejoran el tiempo hasta el primer audio y el uso de memoria. Regla práctica: usa el fragmento más grande que cumpla tu objetivo de latencia/VRAM.</p>
 <p>Si <code>streaming_enabled</code> está en <code>false</code> (configuración en tiempo de ejecución), <code>/tts/stream</code> devuelve <code>404</code> y solo están disponibles los endpoints no-streaming.</p>
 
 <h2>Límites de entrada</h2>
 <p>El servidor nunca acepta entrada ilimitada. Los límites se comprueban <b>antes de cargar o usar la GPU</b> (errores 400 sin tocar el modelo):</p>
 <ul>
-  <li><code>limits.max_text_characters</code> (por defecto 10000): longitud máxima del texto por petición.</li>
+  <li><code>limits.max_text_characters</code> (por defecto 10000): límite absoluto de seguridad, longitud máxima del texto por petición.</li>
   <li><code>limits.max_reference_audio_mb</code> (por defecto 25): tamaño máximo del audio de referencia de clonación (<code>reference_audio</code> o voces locales).</li>
-  <li><code>limits.max_audio_duration_seconds</code> (por defecto 30): duración estimada del audio generado a partir de la longitud del texto (~16 caracteres/segundo).</li>
+  <li><code>limits.max_estimated_audio_duration_seconds</code> (por defecto 30): HEURÍSTICA de duración estimada del audio a partir de la longitud del texto (~16 caracteres/segundo); no es la duración real.</li>
   <li><code>limits.max_reference_duration_seconds</code> (por defecto 60): duración máxima del audio de referencia de clonación, verificada decodificando el archivo antes de usar GPU.</li>
   <li><code>limits.max_voice_audio_duration_seconds</code> (por defecto 120) y <code>limits.max_voice_audio_bytes</code> (50 MB): duración y tamaño máximos del audio subido para crear voces.</li>
   <li><code>limits.max_transcribe_duration_seconds</code> (por defecto 600) y <code>limits.max_transcribe_audio_bytes</code> (100 MB): duración y tamaño máximos del audio a transcribir.</li>
@@ -214,7 +217,7 @@ curl -N -X POST http://localhost:8001/tts/stream \
   <li>Se respetan los <b>párrafos</b> (nunca se corta uno a mitad si cabe en el fragmento).</li>
   <li>Se respetan las <b>frases</b> (nunca se corta una frase a mitad si cabe).</li>
   <li>Se evitan cortes artificiales: solo se parte por palabras cuando una frase/párrafo excede el tamaño máximo.</li>
-  <li>El tamaño máximo de cada fragmento es <code>max_text_chars</code> (configuración en tiempo de ejecución).</li>
+  <li>El tamaño máximo de cada fragmento es <code>max_text_chars</code> (configuración en tiempo de ejecución). Es un trade-off calidad/latencia/VRAM: fragmentos grandes mejoran consistencia de voz y continuidad prosódica; fragmentos pequeños reducen el tiempo hasta el primer audio y la memoria usada.</li>
 </ul>
 <p>Modos de división (<code>text.chunking</code>, variable de entorno <code>QWEN_TTS_TEXT__CHUNKING</code>):</p>
 <ul>

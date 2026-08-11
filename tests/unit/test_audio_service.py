@@ -37,7 +37,10 @@ def _wav_bytes(wav, sr=SR):
 
 @pytest.fixture(scope="module")
 def service():
-    config = SimpleNamespace(paths=SimpleNamespace(audios_dir="."))
+    config = SimpleNamespace(
+        paths=SimpleNamespace(audios_dir="."),
+        audio=SimpleNamespace(normalization_dbfs=-1.0),
+    )
     return AudioService(config, None)
 
 
@@ -125,16 +128,64 @@ def test_normalize_silence_unchanged(service):
     assert np.allclose(out, silent)
 
 
+def test_normalize_custom_dbfs(service):
+    wav = _sine(amplitude=0.01)
+    out = service.normalize(wav, dbfs=-6.0)
+    assert float(np.max(np.abs(out))) == pytest.approx(10 ** (-6.0 / 20.0), abs=1e-4)
+    # 0 dBFS = pico a escala completa (1.0)
+    out = service.normalize(wav, dbfs=0.0)
+    assert float(np.max(np.abs(out))) == pytest.approx(1.0, abs=1e-4)
+
+
+def test_normalize_uses_config_default(service):
+    config = SimpleNamespace(
+        paths=SimpleNamespace(audios_dir="."),
+        audio=SimpleNamespace(normalization_dbfs=-3.0),
+    )
+    svc = AudioService(config, None)
+    out = svc.normalize(_sine(amplitude=0.01))
+    assert float(np.max(np.abs(out))) == pytest.approx(10 ** (-3.0 / 20.0), abs=1e-4)
+
+
 def test_get_duration(service):
     assert service.get_duration(_wav_bytes(_sine())) == pytest.approx(DURATION, abs=0.01)
 
 
 def test_validate_ok(service):
     info = service.validate(_wav_bytes(_sine()), filename="voz.wav", formats=AudioService.FORMATS)
-    assert info["sample_rate"] == SR
-    assert info["duration"] == pytest.approx(DURATION, abs=0.01)
-    assert info["size_bytes"] > 0
-    assert info["channels"] == 1
+    assert info.sample_rate == SR
+    assert info.duration == pytest.approx(DURATION, abs=0.01)
+    assert info.size_bytes > 0
+    assert info.channels == 1
+    # Sin decode=True no se decodifica: info es solo cabecera.
+    assert info.samples is None
+
+
+def test_validate_decode_returns_audio(service):
+    """decode=True decodifica una sola vez y expone el array para reutilizar."""
+    wav = _sine()
+    info = service.validate(
+        _wav_bytes(wav),
+        filename="voz.wav",
+        formats=AudioService.FORMATS,
+        decode=True,
+    )
+    assert info.samples is not None
+    assert info.samples.shape[0] == int(SR * DURATION)
+    assert info.sample_rate == SR
+
+
+def test_validate_decode_prepare_reuses_audio(service):
+    """El array de validate() se puede post-procesar sin volver a decodificar."""
+    info = service.validate(
+        _wav_bytes(_sine()),
+        filename="voz.wav",
+        formats=AudioService.FORMATS,
+        decode=True,
+    )
+    wav, sr = service.prepare(info.samples, info.sample_rate, target_sr=8000)
+    assert sr == 8000
+    assert wav.shape[0] == int(8000 * DURATION)
 
 
 def test_validate_empty_raises(service):
@@ -170,7 +221,7 @@ def test_validate_mime_matches(service):
         filename="clip.wav",
         content_type="audio/wav",
     )
-    assert info["format"] == "wav"
+    assert info.format == "wav"
 
 
 def test_validate_mime_mismatch_with_extension(service):
@@ -197,7 +248,7 @@ def test_validate_octet_stream_is_lenient(service):
         filename="clip.wav",
         content_type="application/octet-stream",
     )
-    assert info["sample_rate"] == SR
+    assert info.sample_rate == SR
 
 
 def test_validate_content_mismatch_with_extension(service):
@@ -239,7 +290,7 @@ def test_validate_garbage_rejected(service):
 def test_validate_m4a_upload(service):
     m4a = service.convert(_sine(), SR, "m4a")
     info = service.validate(m4a, filename="clip.m4a", formats=AudioService.FORMATS)
-    assert info["duration"] == pytest.approx(DURATION, abs=0.05)
+    assert info.duration == pytest.approx(DURATION, abs=0.05)
 
 
 def test_encode_pcm(service):

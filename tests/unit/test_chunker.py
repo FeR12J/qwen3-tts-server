@@ -89,3 +89,66 @@ def test_invalid_sizes():
         TextChunker(max_characters=0)
     with pytest.raises(TextChunkerError):
         TextChunker(chunk_size=0)
+
+
+# -- Casos extremos -------------------------------------------------------
+
+
+def test_edge_empty_and_whitespace_only():
+    c = TextChunker()
+    assert c.chunk("") == []
+    assert c.chunk(" ") == []
+    assert c.chunk("\n") == []
+    assert c.chunk("\n\n") == []
+    assert c.chunk(" \t\n ") == []
+
+
+def test_edge_single_short_sentences():
+    c = TextChunker()
+    assert c.chunk("Hola.") == ["Hola."]
+    assert c.chunk("Hola! ¿Cómo estás?") == ["Hola! ¿Cómo estás?"]
+    assert c.chunk("¿Qué? ¡Esto funciona!") == ["¿Qué? ¡Esto funciona!"]
+
+
+def test_edge_decimal_number_not_split():
+    c = TextChunker()
+    assert c.chunk("1.234,56 €") == ["1.234,56 €"]
+
+
+def test_edge_url_and_email_not_split():
+    c = TextChunker()
+    assert c.chunk("www.example.com") == ["www.example.com"]
+    assert c.chunk("test@example.com") == ["test@example.com"]
+
+
+def test_edge_ellipsis_not_split():
+    c = TextChunker()
+    assert c.chunk("Hello... world") == ["Hello... world"]
+
+
+def test_edge_chunk_exactly_max_chunk_size():
+    cs = 100
+    chunks = TextChunker(chunk_size=cs).chunk("A" * cs)
+    assert chunks == ["A" * cs]
+
+
+def test_edge_chunk_just_over_max_chunk_size():
+    cs = 100
+    text = "A" * (cs + 1)
+    chunks = TextChunker(chunk_size=cs).chunk(text)
+    assert all(len(x) <= cs for x in chunks)
+    assert "".join(chunks) == text
+    assert len(chunks) == 2
+    assert chunks[0] == "A" * cs
+
+
+@pytest.mark.parametrize("chunking", ["sentence", "paragraph"])
+def test_edge_word_longer_than_chunk_size_fallback_by_characters(chunking):
+    """Palabra sin espacios > chunk_size: obliga al fallback por caracteres."""
+    cs = 1000
+    long_word = "x" * 2500
+    chunks = TextChunker(chunking=chunking, chunk_size=cs).chunk(long_word)
+    assert all(len(x) <= cs for x in chunks)
+    assert "".join(chunks) == long_word
+    assert len(chunks) == 3
+    assert chunks[0] == "x" * cs

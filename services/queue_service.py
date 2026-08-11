@@ -22,6 +22,15 @@ class QueueService:
           Request A -> unload
           Request B -> inference   (modelo a mitad de descarga)
           Request C -> load
+
+    REGLA ARQUITECTÓNICA (validación fuera de la GPU):
+    Nunca se valida input caro dentro de inference_lock. Orden obligatorio:
+
+        validate request  -> validate text  -> validate audio
+        -> acquire lock -> prepare model -> inference
+
+    La GPU solo debe ocuparse preparando el modelo y generando; un upload
+    inválido debe fallar con 400 sin haber bloqueado la inferencia.
     """
 
     def __init__(self, max_parallel_inference: int = 1):

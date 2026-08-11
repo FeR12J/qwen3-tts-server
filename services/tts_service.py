@@ -149,13 +149,15 @@ class TTSService:
 
         Orden: reference_audio -> voice local -> voz cargada -> voz por defecto.
         Devuelve None si se usará voice_clone_prompt, o (wav, text).
+
+        El tamaño/dureación del audio de referencia ya se validó sin GPU en
+        _validate_input_limits(): aquí solo se resuelve la referencia.
         """
         if request.reference_audio:
             if not os.path.exists(request.reference_audio):
                 raise TTSValidationError(
                     f"reference_audio no existe: {request.reference_audio}"
                 )
-            self._check_ref_audio_size(request.reference_audio)
             ref_text = (request.reference_text or "").strip()
             if not ref_text:
                 raise TTSValidationError(
@@ -204,9 +206,9 @@ class TTSService:
     def _require_text(self, request: TTSRequest) -> str:
         """Validar el texto de entrada contra los límites (antes de GPU).
 
-        Aplica limits.max_text_characters (longitud) y una estimación de
-        limits.max_audio_duration_seconds a partir de la longitud del texto
-        (ritmo medio de habla ~16 caracteres/segundo).
+        Aplica limits.max_text_characters (límite absoluto de entrada) y una
+        HEURÍSTICA de duración estimada (limits.max_estimated_audio_duration_seconds
+        a partir de la longitud del texto, ritmo medio de habla ~16 caracteres/segundo).
         """
         text = (request.text or request.input or "").strip()
         if not text:
@@ -220,10 +222,10 @@ class TTSService:
             )
 
         estimated = len(text) / CHARS_PER_SECOND
-        if estimated > settings.limits.max_audio_duration_seconds:
+        if estimated > settings.limits.max_estimated_audio_duration_seconds:
             raise TTSValidationError(
                 f"Audio estimado demasiado largo: ~{estimated:.1f}s "
-                f"(máximo configurado: {settings.limits.max_audio_duration_seconds}s). "
+                f"(máximo configurado: {settings.limits.max_estimated_audio_duration_seconds}s). "
                 "Reduce la longitud del texto."
             )
         return text
@@ -341,8 +343,11 @@ class TTSService:
         rc = get_runtime_config()
 
         async with self._queue.inference_lock():
-            # Validación completa (idioma, speaker, refs de voz, tamaños)
-            # ANTES de preparar/consumir GPU.
+            # Regla arquitectónica: la validación cara (texto, audio de
+            # referencia) ya ocurrió ANTES del lock (_require_text /
+            # _validate_input_limits). Dentro del lock solo queda: resolver
+            # el modelo (puede cargarlo = GPU), validaciones baratas de
+            # metadatos (idioma/speaker) y la generación.
             info = await self._resolve_model(request)
             self._build_kwargs(request, info)
 
@@ -401,7 +406,7 @@ class TTSService:
         chunks = self._chunk_text(text)
         if not chunks:
             raise TTSValidationError(
-                "No se pudo dividir el texto en fragmentos para streaming."
+                "No se pudo dividir el texto en fragmentos para chunked streaming."
             )
         logger.info(f"Streaming: {len(chunks)} fragmentos, {len(text)} caracteres")
 
@@ -413,7 +418,15 @@ class TTSService:
 
     async def stream_synthesize(self, request: TTSRequest, plan: StreamPlan,
                                 http_request=None):
-        """Generador de streaming real: audio por fragmentos (frases o párrafos, según text.chunking) en cuanto terminan.
+        """Generador de chunked streaming: audio por fragmentos (frases o
+        párrafos, según text.chunking) en cuanto terminan.
+
+        IMPORTANTE: cada fragmento es una generación independiente.
+        - Each chunk is synthesized independently.
+        - Chunking reduces memory usage and enables incremental delivery,
+          but does not preserve acoustic/prosodic state between chunks.
+        El modelo se reinicia entre fragmentos: no hay continuidad
+        prosódica/entonativa entre chunks (no es "true streaming").
 
         Cada yield es el PCM 16-bit LE de una frase (sin cabecera WAV: el
         ensamblado del formato es responsabilidad de la capa HTTP). Mantiene

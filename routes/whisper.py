@@ -34,27 +34,29 @@ def create_whisper_routes(app: FastAPI, ctx):
         audio: Optional[UploadFile] = File(None),
         language: Optional[str] = Form(None),
     ):
+        # Regla arquitectónica: validación SIEMPRE antes de adquirir el
+        # inference_lock (la GPU nunca se bloquea validando input).
+        if audio is None or not audio.filename:
+            raise HTTPException(400, "Archivo de audio requerido (campo 'audio')")
+
+        data = await audio.read()
+        sl = settings.limits
+        try:
+            ctx.audio.validate(
+                data,
+                max_bytes=sl.max_transcribe_audio_bytes,
+                max_duration=sl.max_transcribe_duration_seconds,
+                filename=audio.filename,
+                content_type=audio.content_type,
+                min_sample_rate=sl.min_sample_rate,
+                max_sample_rate=sl.max_sample_rate,
+                max_channels=sl.max_channels,
+                decode=True,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
         async with ctx.queue.inference_lock():
-            if audio is None or not audio.filename:
-                raise HTTPException(400, "Archivo de audio requerido (campo 'audio')")
-
-            data = await audio.read()
-            sl = settings.limits
-            try:
-                ctx.audio.validate(
-                    data,
-                    max_bytes=sl.max_transcribe_audio_bytes,
-                    max_duration=sl.max_transcribe_duration_seconds,
-                    filename=audio.filename,
-                    content_type=audio.content_type,
-                    min_sample_rate=sl.min_sample_rate,
-                    max_sample_rate=sl.max_sample_rate,
-                    max_channels=sl.max_channels,
-                    decode=True,
-                )
-            except ValueError as e:
-                raise HTTPException(400, str(e))
-
             # Liberar VRAM del modelo TTS antes de cargar Whisper (si la config lo exige)
             await prepare_for_whisper(ctx.models, ctx.voices, whisper_service)
 

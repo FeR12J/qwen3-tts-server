@@ -91,14 +91,33 @@ class CorsSettings(BaseModel):
     allow_headers: list = ["*"]
 
 
+class AudioSettings(BaseModel):
+    """Procesado de audio de referencia (clonación de voz).
+
+    - ``normalize_reference_audio``: normalizar el pico de amplitud de los
+      audios de referencia a ``normalization_dbfs`` antes de usarlos.
+      Desactivarlo (false) preserva exactamente la dinámica original del
+      archivo subido.
+    - ``normalization_dbfs``: nivel de pico objetivo de la normalización
+      (valor en dBFS, <= 0; -1.0 = -1 dBFS, margen de seguridad estándar).
+    """
+    normalize_reference_audio: bool = True
+    normalization_dbfs: float = Field(-1.0, le=0.0)
+
+
 class LimitsSettings(BaseModel):
     """Límites de entrada del servidor (se comprueban antes de usar GPU).
 
-    - ``max_text_characters``: longitud máxima del texto por petición TTS.
+    - ``max_text_characters``: límite absoluto de seguridad: longitud máxima
+      del texto por petición TTS (límite de entrada).
     - ``max_reference_audio_mb``: tamaño máximo del audio de referencia
       (clonación de voz) en MB.
-    - ``max_audio_duration_seconds``: duración máxima estimada del audio
-      generado (estimada desde la longitud del texto, ~16 caracteres/segundo).
+    - ``max_estimated_audio_duration_seconds``: HEURÍSTICA: duración máxima
+      estimada del audio generado a partir de la longitud del texto
+      (~16 caracteres/segundo). No es la duración real: depende del idioma,
+      puntuación, números, velocidad, modelo, etc. Puede rechazar textos
+      cortos o dejar pasar textos largos; no debe confundirse con un límite
+      de texto procesable (eso es max_text_characters).
     - ``max_reference_duration_seconds``: duración máxima del audio de
       referencia (clonación de voz), comprobada antes de usar GPU.
     - ``max_voice_audio_bytes`` / ``max_voice_audio_duration_seconds``:
@@ -113,7 +132,7 @@ class LimitsSettings(BaseModel):
     max_transcribe_audio_bytes: int = 100 * 1024 * 1024
     max_text_characters: int = 10000
     max_reference_audio_mb: int = 25
-    max_audio_duration_seconds: int = 30
+    max_estimated_audio_duration_seconds: int = 30
     max_reference_duration_seconds: int = 60
     max_voice_audio_duration_seconds: int = 120
     max_transcribe_duration_seconds: int = 600
@@ -154,6 +173,13 @@ class RuntimeSettings(BaseModel):
     QWEN_TTS_DEVICE, QWEN_TTS_DTYPE y QWEN_TTS_REQUIRE_API_KEY tienen
     prioridad sobre el archivo persistido."""
     max_text_chars: int = 1000
+    # max_text_chars = chunk_size del chunker. No es solo rendimiento: es un
+    # trade-off CALIDAD <-> LATENCIA <-> VRAM.
+    #   chunk grande  -> mejor consistencia de voz, continuidad prosódica e
+    #                    entonación a nivel de frase (cada chunk es una
+    #                    generación independiente: el modelo se reinicia).
+    #   chunk pequeño -> menor tiempo hasta el primer audio y menor uso de
+    #                    memoria/VRAM, a costa de calidad de continuidad.
     playback_wait_timeout: int = 300
     def_language: str = "spanish"
     def_voice: str = "Serena"
@@ -163,7 +189,7 @@ class RuntimeSettings(BaseModel):
     log_level: str = "INFO"
     log_requests: bool = True
     api_keys_enabled: bool = False
-    # Endpoint /tts/stream habilitado (generación por frases en streaming)
+    # Endpoint /tts/stream habilitado (chunked streaming por frases)
     streaming_enabled: bool = True
     # Por defecto el audio se devuelve por HTTP sin persistirlo; activar
     # save_audios desde el panel (o runtime.json) guarda una copia en audios/
@@ -212,6 +238,7 @@ class Settings(BaseSettings):
     whisper: WhisperSettings = WhisperSettings()
     cors: CorsSettings = CorsSettings()
     limits: LimitsSettings = LimitsSettings()
+    audio: AudioSettings = AudioSettings()
     storage: StorageSettings = StorageSettings()
     queue: QueueSettings = QueueSettings()
     auth: AuthSettings = AuthSettings()

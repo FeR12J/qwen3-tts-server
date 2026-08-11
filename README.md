@@ -96,7 +96,7 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 | PUBLIC | GET | `/webui`, `/webui/docs` | Panel y documentación |
 | PUBLIC | GET | `/webui/api/devices` | GPUs disponibles y dispositivo en uso |
 | PROTECTED | POST | `/tts` | Generar TTS (estándar) |
-| PROTECTED | POST | `/tts/stream` | TTS en streaming real: audio por frases, WAV o PCM |
+| PROTECTED | POST | `/tts/stream` | TTS chunked streaming (incremental por fragmentos), WAV o PCM |
 | PROTECTED | POST | `/tts/play` | Generar TTS y reproducirlo en este equipo |
 | PROTECTED | POST | `/tts/audio/speech` | Generar TTS (compatible OpenWebUI) |
 | PROTECTED | POST | `/transcribe` | Transcribir audio a texto con Whisper |
@@ -163,7 +163,7 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 ## Configuración
 
 ### config/settings.py
-- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `text` (`chunking` = modo de división `sentence`/`paragraph`), `whisper` (`whisper_model`), `limits` (límites de entrada, comprobados antes de usar GPU: `max_text_characters` = 10000, `max_reference_audio_mb` = 25, `max_audio_duration_seconds` = 30, `max_reference_duration_seconds` = 60, `max_voice_audio_duration_seconds` = 120, `max_transcribe_duration_seconds` = 600, `min_sample_rate` = 8000, `max_sample_rate` = 96000, `max_channels` = 2), `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars` = tamaño máximo de cada fragmento generado, `device`, `dtype`, flags de VRAM, etc.).
+- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `text` (`chunking` = modo de división `sentence`/`paragraph`), `whisper` (`whisper_model`), `limits` (límites de entrada, comprobados antes de usar GPU: `max_text_characters` = 10000, `max_reference_audio_mb` = 25, `max_estimated_audio_duration_seconds` = 30, `max_reference_duration_seconds` = 60, `max_voice_audio_duration_seconds` = 120, `max_transcribe_duration_seconds` = 600, `min_sample_rate` = 8000, `max_sample_rate` = 96000, `max_channels` = 2), `queue`, `auth`, `audio` (normalización de voz: `normalize_reference_audio` = true, `normalization_dbfs` = -1.0), `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars` = tamaño máximo de cada fragmento generado, `device`, `dtype`, flags de VRAM, etc.).
 - Variables de entorno con prefijo `QWEN_TTS_`. Soporta al menos:
   - `QWEN_TTS_HOST=0.0.0.0`, `QWEN_TTS_PORT=8001`
   - `QWEN_TTS_DEVICE=cuda:0` (o `auto`/`cpu`), `QWEN_TTS_DTYPE=bfloat16` (o `float16`/`float32`/`auto`)
@@ -184,6 +184,19 @@ Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por de
 pip install -r requirements-dev.txt
 pytest tests/
 ```
+
+## Regla arquitectónica: validación fuera de la GPU
+
+Nunca se valida input caro dentro de `queue.inference_lock()`. Orden obligatorio:
+
+```
+validate request -> validate text -> validate audio
+-> acquire lock -> prepare model -> inference
+```
+
+La GPU solo se ocupa preparando el modelo y generando; un upload o texto inválido
+debe fallar con 400 sin haber bloqueado la inferencia (ver docstring de
+`QueueService.inference_lock`).
 
 ## Ejecución
 
