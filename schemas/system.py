@@ -26,6 +26,8 @@ class ConfigUpdate(BaseModel):
     normalization_dbfs: Optional[float] = None
     generated_audio_ttl_hours: Optional[float] = None
     max_parallel_inference: Optional[int] = None
+    queue_enabled: Optional[bool] = None
+    queue_max_size: Optional[int] = None
     max_text_characters: Optional[int] = None
     max_estimated_audio_duration_seconds: Optional[int] = None
     max_reference_audio_mb: Optional[int] = None

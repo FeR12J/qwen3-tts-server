@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Tests unitarios de la separación model_lock / inference_lock."""
+"""Tests unitarios de la separación model_lock / inference_lock y de la
+cola interna (asyncio.Queue + worker GPU)."""
 
 import asyncio
+
+import pytest
+from fastapi import HTTPException
 
 from services.queue_service import QueueService
 
@@ -122,5 +126,167 @@ def test_parallel_inferences_with_semaphore():
         starts = [o for o in order if o.startswith("start")]
         assert len(starts) == 2  # ambas empezaron antes de terminar ninguna
         assert order[:2] == starts
+
+    asyncio.run(scenario())
+
+
+# -- Cola interna (HTTP -> asyncio.Queue -> worker GPU) ---------------------
+
+
+def test_queue_fifo_order():
+    """Con la cola activada, el worker concede turnos en orden FIFO."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=10)
+        q.start()
+        order = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                order.append(("start", i))
+                await asyncio.sleep(0.02)
+                order.append(("end", i))
+
+        await asyncio.gather(*[asyncio.create_task(inference(i)) for i in (1, 2, 3)])
+        assert [i for t, i in order if t == "start"] == [1, 2, 3]
+        await q.stop()
+
+    asyncio.run(scenario())
+
+
+def test_queue_full_rejects_with_429():
+    """Con max_size=2, la tercera petición en espera recibe 429."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=2)
+        q.start()
+        release = asyncio.Event()
+
+        async def inference(i):
+            async with q.inference_lock():
+                if i == 1:
+                    await release.wait()
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)  # t1 en ejecución (worker concedió)
+        t2 = asyncio.create_task(inference(2))
+        t3 = asyncio.create_task(inference(3))
+        await asyncio.sleep(0.05)  # t2 y t3 ocupando la cola (2 en espera)
+
+        with pytest.raises(HTTPException) as exc:
+            async with q.inference_lock():
+                pass
+        assert exc.value.status_code == 429
+
+        release.set()
+        await asyncio.gather(t1, t2, t3)
+        await q.stop()
+
+    asyncio.run(scenario())
+
+
+def test_queue_rejects_with_503_during_shutdown():
+    """Durante el apagado (stop() en curso) se responde 503, no 429."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=4)
+        q.start()
+        release = asyncio.Event()
+
+        async def inference():
+            async with q.inference_lock():
+                await release.wait()
+
+        t1 = asyncio.create_task(inference())
+        await asyncio.sleep(0.05)  # t1 en ejecución
+        stop_task = asyncio.create_task(q.stop())
+        await asyncio.sleep(0.05)  # stop() en curso, workers drenando
+
+        with pytest.raises(HTTPException) as exc:
+            async with q.inference_lock():
+                pass
+        assert exc.value.status_code == 503
+
+        release.set()
+        await asyncio.gather(t1, stop_task)
+
+    asyncio.run(scenario())
+
+
+def test_queue_waits_when_not_full():
+    """Si hay hueco en la cola, la petición espera su turno sin 429."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=4)
+        q.start()
+        release = asyncio.Event()
+        done = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                done.append(i)
+                if i == 1:
+                    await release.wait()
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)
+        t2 = asyncio.create_task(inference(2))
+        await asyncio.sleep(0.05)
+        assert done == [1]          # t2 en espera de turno
+        release.set()
+        await asyncio.gather(t1, t2)
+        assert done == [1, 2]       # t2 ejecutó después
+        await q.stop()
+
+    asyncio.run(scenario())
+
+
+def test_queue_stop_drains_pending_jobs():
+    """stop() no corta inferencias: termina las encoladas antes de salir."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=4)
+        q.start()
+        release = asyncio.Event()
+        done = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                done.append(f"s{i}")
+                if i == 1:
+                    await release.wait()
+                done.append(f"e{i}")
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)
+        t2 = asyncio.create_task(inference(2))
+        await asyncio.sleep(0.05)   # t2 encolado
+
+        stop_task = asyncio.create_task(q.stop())
+        await asyncio.sleep(0.05)   # stop esperando al worker
+        release.set()
+        await asyncio.gather(t1, t2, stop_task)
+
+        assert done == ["s1", "e1", "s2", "e2"]
+
+    asyncio.run(scenario())
+
+
+def test_queue_disabled_never_429():
+    """Sin cola, las peticiones esperan en el semáforo (sin 429)."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=False, max_size=1)
+        release = asyncio.Event()
+        done = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                done.append(i)
+                if i == 1:
+                    await release.wait()
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)
+        t2 = asyncio.create_task(inference(2))
+        await asyncio.sleep(0.05)
+        assert done == [1]
+        release.set()
+        await asyncio.gather(t1, t2)
+        assert done == [1, 2]
 
     asyncio.run(scenario())

@@ -152,7 +152,17 @@ class StorageSettings(BaseModel):
 
 
 class QueueSettings(BaseModel):
-    """Cola de inferencia GPU."""
+    """Cola interna de inferencia GPU (en proceso; sin servicios externos).
+
+    - ``enabled``: las peticiones de inferencia pasan por una asyncio.Queue
+      FIFO atendida por workers de GPU en vez de acumularse en el semáforo.
+      Con la cola llena (``max_size`` en espera) se responde 429.
+    - ``max_size``: número máximo de peticiones en espera en la cola.
+    - ``max_parallel_inference``: workers de GPU y slots de inferencia
+      simultáneos (se aplica al arrancar el servidor).
+    """
+    enabled: bool = True
+    max_size: int = 4
     max_parallel_inference: int = 1
 
 
@@ -220,6 +230,10 @@ class RuntimeSettings(BaseModel):
     # queue.max_parallel_inference: inferencias GPU simultáneas (requiere
     # reinicio para aplicarse: la cola se construye en el arranque)
     max_parallel_inference: int = 1
+    # queue.enabled / queue.max_size: cola interna FIFO de inferencia
+    # (requiere reinicio para aplicarse)
+    queue_enabled: bool = True
+    queue_max_size: int = 4
 
     # limits.*: límites de entrada (se comprueban antes de usar GPU).
     # Los límites de bytes se guardan en MB; el resto en las unidades de uso.

@@ -34,6 +34,8 @@ RUNTIME_DEFAULTS_SEED = {
     "normalization_dbfs": ("audio", "normalization_dbfs"),
     "generated_audio_ttl_hours": ("storage", "generated_audio_ttl_hours"),
     "max_parallel_inference": ("queue", "max_parallel_inference"),
+    "queue_enabled": ("queue", "enabled"),
+    "queue_max_size": ("queue", "max_size"),
     "max_text_characters": ("limits", "max_text_characters"),
     "max_estimated_audio_duration_seconds": ("limits", "max_estimated_audio_duration_seconds"),
     "max_reference_audio_mb": ("limits", "max_reference_audio_mb"),

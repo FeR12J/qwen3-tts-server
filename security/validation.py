@@ -90,6 +90,11 @@ def validate_config_update(changes: dict, config_service):
         or not 1 <= changes["max_parallel_inference"] <= 16
     ):
         raise HTTPException(400, "max_parallel_inference debe estar entre 1 y 16")
+    if "queue_max_size" in changes and (
+        changes["queue_max_size"] is None
+        or not 1 <= changes["queue_max_size"] <= 100
+    ):
+        raise HTTPException(400, "queue_max_size debe estar entre 1 y 100")
     for field in (
         "max_text_characters", "max_estimated_audio_duration_seconds",
         "max_reference_audio_mb", "max_reference_duration_seconds",
@@ -118,6 +123,7 @@ def validate_config_update(changes: dict, config_service):
     ):
         raise HTTPException(400, "max_channels debe estar entre 1 y 8")
     for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts",
-                 "streaming_enabled", "save_audios", "normalize_reference_audio"):
+                 "streaming_enabled", "save_audios", "normalize_reference_audio",
+                 "queue_enabled"):
         if flag in changes and not isinstance(changes[flag], bool):
             raise HTTPException(400, f"{flag} debe ser true o false")

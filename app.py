@@ -55,7 +55,11 @@ class AppContext:
 
 def build_context() -> AppContext:
     """Construir e interconectar todos los servicios."""
-    queue = QueueService(settings.runtime.max_parallel_inference)
+    queue = QueueService(
+        max_parallel_inference=settings.runtime.max_parallel_inference,
+        enabled=settings.runtime.queue_enabled,
+        max_size=settings.runtime.queue_max_size,
+    )
     models = ModelManager()
     voices = VoiceManager(models)
     audio = AudioService(settings, queue)
@@ -116,6 +120,7 @@ async def lifespan(app: FastAPI):
     load_runtime_config()
     apply_log_level()
     ctx = build_context()
+    ctx.queue.start()
     register_routes(app, ctx)
     cleanup_task = asyncio.create_task(audio_cleanup_loop(ctx))
     try:
@@ -246,14 +251,19 @@ async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
     print("Apagando servidor...")
     print("." * 30)
 
-    # 3. Detener tareas de fondo (limpieza periódica de audios)
+    # 3. Detener tareas de fondo: limpieza periódica de audios, workers de
+    #    la cola de inferencia (drenando jobs pendientes) y reproducción.
     cleanup_task.cancel()
     try:
         await cleanup_task
     except asyncio.CancelledError:
         pass
 
-    # 5. Detener la reproducción en curso, si la hay
+    try:
+        await ctx.queue.stop()
+    except Exception as e:
+        logger.warning(f"Error deteniendo la cola de inferencia: {e}")
+
     try:
         await ctx.queue.stop_playback()
     except Exception as e:

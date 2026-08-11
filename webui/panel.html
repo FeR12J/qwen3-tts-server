@@ -449,6 +449,16 @@ footer a:hover { text-decoration:underline; }
             <div class="hint">Se aplica al reiniciar el servidor (la cola se crea en el arranque).</div>
           </div>
           <div>
+            <label for="cfgQueueEnabled">Cola interna de inferencia</label>
+            <select id="cfgQueueEnabled"><option value="true">Activada</option><option value="false">Desactivada</option></select>
+            <div class="hint">HTTP -&gt; cola FIFO -&gt; worker GPU. Se aplica al reiniciar.</div>
+          </div>
+          <div>
+            <label for="cfgQueueMaxSize">Peticiones máx. en espera en la cola</label>
+            <input type="number" id="cfgQueueMaxSize" min="1" max="100">
+            <div class="hint">Si la cola está llena se responde 429. Se aplica al reiniciar.</div>
+          </div>
+          <div>
             <label for="cfgTtl">Vida máxima de audios generados (horas)</label>
             <input type="number" id="cfgTtl" min="0.1" step="1">
             <div class="hint">La limpieza automática de <code>audios/</code> elimina los más antiguos.</div>
@@ -795,6 +805,8 @@ async function loadConfig() {
     $('cfgDbfs').value = c.normalization_dbfs;
     $('cfgTtl').value = c.generated_audio_ttl_hours;
     $('cfgParallel').value = c.max_parallel_inference;
+    $('cfgQueueEnabled').value = String(c.queue_enabled !== false);
+    $('cfgQueueMaxSize').value = c.queue_max_size;
     $('cfgMaxEstDuration').value = c.max_estimated_audio_duration_seconds;
     $('cfgMaxRefAudioMb').value = c.max_reference_audio_mb;
     $('cfgMaxRefDuration').value = c.max_reference_duration_seconds;
@@ -831,6 +843,8 @@ async function saveConfig() {
     normalization_dbfs: parseFloat($('cfgDbfs').value),
     generated_audio_ttl_hours: parseFloat($('cfgTtl').value),
     max_parallel_inference: parseInt($('cfgParallel').value),
+    queue_enabled: $('cfgQueueEnabled').value === 'true',
+    queue_max_size: parseInt($('cfgQueueMaxSize').value),
     max_estimated_audio_duration_seconds: parseInt($('cfgMaxEstDuration').value),
     max_reference_audio_mb: parseInt($('cfgMaxRefAudioMb').value),
     max_reference_duration_seconds: parseInt($('cfgMaxRefDuration').value),
