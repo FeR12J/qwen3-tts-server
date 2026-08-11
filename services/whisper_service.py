@@ -24,8 +24,11 @@ import torch
 
 from config.settings import settings
 from services.audio_service import SPEECH_SAMPLE_RATE, AudioService
-from services.config_service import resolve_device
-from utils.gpu import get_dtype
+from services.config_service import (
+    resolve_device,
+    validated_device,
+    validated_dtype,
+)
 
 logger = logging.getLogger("tts")
 
@@ -164,8 +167,8 @@ class WhisperService:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Modelo Whisper no encontrado en {model_path}")
 
-        device = resolve_device()
-        dtype = get_dtype()
+        device = validated_device()
+        dtype = validated_dtype()
         logger.info(f"Cargando Whisper desde {model_path} (device: {device}, dtype: {dtype})")
 
         self._processor = WhisperProcessor.from_pretrained(model_path)

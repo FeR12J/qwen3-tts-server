@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Tests de resolución y validación de dispositivo (cuda/cuda:N/cpu) y dtype."""
+
+import contextlib
+
+import pytest
+import torch
+
+from config.settings import settings
+from services import config_service as cs
+
+
+@pytest.fixture
+def cuda_2_gpus(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(torch.cuda, "device", lambda idx: contextlib.nullcontext())
+
+
+@pytest.fixture
+def no_cuda(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
+
+
+@pytest.fixture
+def bf16_supported(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
+
+
+@pytest.fixture
+def bf16_unsupported(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: False)
+
+
+# -- Resolución de dispositivo ----------------------------------------------
+
+
+def test_resolve_device_cpu(monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cpu")
+    assert cs.resolve_device() == "cpu"
+
+
+def test_resolve_device_bare_cuda(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda")
+    assert cs.resolve_device() == "cuda:0"
+
+
+def test_resolve_device_cuda_1(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:1")
+    assert cs.resolve_device() == "cuda:1"
+
+
+def test_resolve_device_missing_gpu_falls_back(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:5")
+    assert cs.resolve_device() == "cuda:0"
+
+
+def test_resolve_device_cuda_without_cuda_falls_back(no_cuda, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda")
+    assert cs.resolve_device() == "cpu"
+
+
+# -- Validación de dispositivo ----------------------------------------------
+
+
+def test_validate_device(cuda_2_gpus):
+    assert cs.validate_device("auto") is True
+    assert cs.validate_device("cpu") is True
+    assert cs.validate_device("cuda") is True
+    assert cs.validate_device("cuda:0") is True
+    assert cs.validate_device("cuda:1") is True
+    assert cs.validate_device("cuda:2") is False
+    assert cs.validate_device("cuda:x") is False
+    assert cs.validate_device("mps") is False
+
+
+def test_validate_device_without_cuda(no_cuda):
+    assert cs.validate_device("cuda") is False
+    assert cs.validate_device("cuda:0") is False
+    assert cs.validate_device("cpu") is True
+
+
+# -- Validación estricta antes de cargar (validated_device) ------------------
+
+
+def test_validated_device_existing_gpu(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:1")
+    assert cs.validated_device() == "cuda:1"
+
+
+def test_validated_device_missing_gpu_raises(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:3")
+    with pytest.raises(ValueError, match="no existe"):
+        cs.validated_device()
+
+
+def test_validated_device_cuda_without_cuda_raises(no_cuda, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda")
+    with pytest.raises(ValueError, match="no hay ninguna GPU CUDA"):
+        cs.validated_device()
+
+
+def test_validated_device_invalid_raises(no_cuda, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "mps")
+    with pytest.raises(ValueError, match="inválido"):
+        cs.validated_device()
+
+
+def test_validated_device_auto_without_cuda(no_cuda, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "auto")
+    assert cs.validated_device() == "cpu"
+
+
+def test_validated_device_auto_with_cuda(cuda_2_gpus, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "auto")
+    assert cs.validated_device() == "cuda:0"
+
+
+# -- Resolución de dtype (auto, según hardware) ------------------------------
+
+
+def test_resolve_dtype_auto_bf16_when_supported(bf16_supported, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "auto")
+    monkeypatch.setattr(settings.runtime, "dtype", "auto")
+    assert cs.resolve_dtype() == "bfloat16"
+    assert cs.validated_dtype() == "bfloat16"
+
+
+def test_resolve_dtype_auto_fp16_when_bf16_unsupported(bf16_unsupported, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "auto")
+    monkeypatch.setattr(settings.runtime, "dtype", "auto")
+    assert cs.resolve_dtype() == "float16"
+    assert cs.validated_dtype() == "float16"
+
+
+def test_resolve_dtype_auto_cpu(no_cuda, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "auto")
+    monkeypatch.setattr(settings.runtime, "dtype", "auto")
+    assert cs.resolve_dtype() == "float32"
+
+
+def test_resolve_dtype_auto_in_gpu_without_bf16(bf16_unsupported, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:1")
+    monkeypatch.setattr(settings.runtime, "dtype", "auto")
+    assert cs.resolve_dtype() == "float16"
+
+
+# -- Validación estricta de dtype (no asumir bfloat16 en todas las GPUs) -----
+
+
+def test_validated_dtype_explicit_bf16_unsupported_raises(bf16_unsupported, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:0")
+    monkeypatch.setattr(settings.runtime, "dtype", "bfloat16")
+    with pytest.raises(ValueError, match="no soportado"):
+        cs.validated_dtype()
+
+
+def test_validated_dtype_explicit_bf16_supported_ok(bf16_supported, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:0")
+    monkeypatch.setattr(settings.runtime, "dtype", "bfloat16")
+    assert cs.validated_dtype() == "bfloat16"
+
+
+def test_validated_dtype_explicit_float16(bf16_unsupported, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cuda:0")
+    monkeypatch.setattr(settings.runtime, "dtype", "float16")
+    assert cs.validated_dtype() == "float16"
+
+
+def test_validated_dtype_explicit_float32_cpu(no_cuda, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "device", "cpu")
+    monkeypatch.setattr(settings.runtime, "dtype", "float32")
+    assert cs.validated_dtype() == "float32"

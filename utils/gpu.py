@@ -13,11 +13,6 @@ def _resolve_device():
     return resolve_device()
 
 
-def _resolve_dtype():
-    from services.config_service import resolve_dtype
-    return resolve_dtype()
-
-
 def get_vram_available():
     """Obtener VRAM disponible en GB de la GPU seleccionada en la configuración."""
     device = _resolve_device()
@@ -29,15 +24,6 @@ def get_vram_available():
         except (ValueError, IndexError, RuntimeError):
             pass
     return 0.0
-
-
-def get_dtype():
-    """Determinar dtype óptimo para el dispositivo configurado.
-
-    Usa settings.runtime.dtype ("auto" -> bfloat16/float16 en GPU, float32 en CPU).
-    """
-    dtype = _resolve_dtype()
-    return getattr(torch, dtype, torch.float32)
 
 
 def list_devices() -> dict:

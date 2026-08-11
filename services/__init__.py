@@ -8,7 +8,11 @@ from .config_service import (
     update_runtime_config,
     apply_log_level,
     resolve_device,
+    resolve_dtype,
     validate_device,
+    validate_dtype,
+    validated_device,
+    validated_dtype,
 )
 from .tts_service import TTSService
 from .whisper_service import transcribe, unload as whisper_unload
@@ -25,7 +29,11 @@ __all__ = [
     "update_runtime_config",
     "apply_log_level",
     "resolve_device",
+    "resolve_dtype",
     "validate_device",
+    "validate_dtype",
+    "validated_device",
+    "validated_dtype",
     "TTSService",
     "transcribe",
     "whisper_unload",

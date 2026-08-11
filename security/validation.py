@@ -70,7 +70,7 @@ def validate_config_update(changes: dict, config_service):
     if "log_level" in changes and changes["log_level"] not in config_service.VALID_LOG_LEVELS:
         raise HTTPException(400, f"log_level inválido. Válidos: {', '.join(config_service.VALID_LOG_LEVELS)}")
     if "device" in changes and not config_service.validate_device(changes["device"]):
-        raise HTTPException(400, "device inválido. Válidos: auto, cpu o cuda:N con N dentro del rango de GPUs")
+        raise HTTPException(400, "device inválido. Válidos: auto, cpu, cuda o cuda:N con N dentro del rango de GPUs")
     if "dtype" in changes and not config_service.validate_dtype(changes["dtype"]):
         raise HTTPException(
             400,

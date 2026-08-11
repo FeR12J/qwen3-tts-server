@@ -93,7 +93,10 @@ def apply_log_level():
 def resolve_device() -> str:
     """Resolver el dispositivo a usar según la configuración y lo disponible.
 
-    Devuelve "cuda:N" o "cpu". Si la GPU solicitada no existe, usa cuda:0.
+    Soporta: "auto", "cpu", "cuda" (GPU 0) y "cuda:N". Si la GPU solicitada
+    no existe, resuelve de forma tolerante (warning + cuda:0 / cpu) para que
+    el estado y el panel sigan funcionando. Para cargar modelos hay que usar
+    ``validated_device``, que sí falla si el dispositivo no existe.
     """
     import torch
 
@@ -104,7 +107,7 @@ def resolve_device() -> str:
         if requested != "auto":
             logger.warning(f"Dispositivo '{requested}' solicitado pero no hay CUDA, usando cpu")
         return "cpu"
-    if requested == "auto":
+    if requested in ("auto", "cuda"):
         return "cuda:0"
     if requested.startswith("cuda:"):
         try:
@@ -120,28 +123,110 @@ def resolve_device() -> str:
 
 
 def validate_device(device: str) -> bool:
-    """Comprobar que el valor de device es válido y existe (si es cuda:N)."""
+    """Comprobar que el valor de device es válido y existe (si es cuda/cuda:N)."""
     if device in ("auto", "cpu"):
         return True
+    import torch
+    if device == "cuda":
+        return torch.cuda.is_available() and torch.cuda.device_count() > 0
     if device.startswith("cuda:"):
         try:
             idx = int(device.split(":", 1)[1])
-            import torch
-            return 0 <= idx < torch.cuda.device_count()
+            return torch.cuda.is_available() and 0 <= idx < torch.cuda.device_count()
         except (ValueError, ImportError):
             return False
     return False
 
 
+def validated_device() -> str:
+    """Dispositivo real para cargar modelos, validando la configuración.
+
+    A diferencia de ``resolve_device`` (tolerante), falla con un ValueError
+    claro si el dispositivo configurado no existe, ANTES de intentar cargar
+    ningún modelo:
+
+    - "auto"  -> cuda:0 (o cpu si no hay CUDA)
+    - "cuda"  -> cuda:0 (o ValueError si no hay CUDA)
+    - "cpu"   -> cpu
+    - "cuda:N" -> cuda:N (o ValueError si la GPU N no existe)
+    """
+    import torch
+
+    requested = settings.runtime.device
+    if requested == "cpu":
+        return "cpu"
+    if requested == "auto":
+        return resolve_device()
+    if requested == "cuda":
+        if not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
+            raise ValueError(
+                "Dispositivo 'cuda' solicitado pero no hay ninguna GPU CUDA disponible"
+            )
+        return "cuda:0"
+    if requested.startswith("cuda:"):
+        try:
+            idx = int(requested.split(":", 1)[1])
+        except ValueError:
+            raise ValueError(
+                f"Dispositivo '{requested}' inválido (use 'auto', 'cpu', 'cuda' o 'cuda:N')"
+            )
+        if not (torch.cuda.is_available() and 0 <= idx < torch.cuda.device_count()):
+            raise ValueError(
+                f"Dispositivo '{requested}' solicitado pero no existe "
+                f"({torch.cuda.device_count() if torch.cuda.is_available() else 0} GPU(s) disponible(s))"
+            )
+        return requested
+    raise ValueError(
+        f"Dispositivo '{requested}' inválido (use 'auto', 'cpu', 'cuda' o 'cuda:N')"
+    )
+
+
+def _supports_bf16(device: str) -> bool:
+    """¿La GPU indicada soporta bfloat16? (no asumir que todas la soportan)."""
+    import torch
+
+    if not device.startswith("cuda:"):
+        return True
+    idx = int(device.split(":", 1)[1])
+    try:
+        with torch.cuda.device(idx):
+            return bool(torch.cuda.is_bf16_supported())
+    except (RuntimeError, TypeError):
+        return False
+
+
 def resolve_dtype() -> str:
-    """Resolver el dtype configurado ("auto" -> segun GPU)."""
+    """Resolver el dtype configurado ("auto" -> según la GPU real).
+
+    En GPU: bfloat16 si la GPU lo soporta, si no float16. En CPU: float32.
+    """
     requested = settings.runtime.dtype
     if requested in ("bfloat16", "float16", "float32"):
         return requested
-    if resolve_device().startswith("cuda:"):
-        import torch
-        return "bfloat16" if torch.cuda.is_bf16_supported() else "float16"
+    device = resolve_device()
+    if device.startswith("cuda:"):
+        return "bfloat16" if _supports_bf16(device) else "float16"
     return "float32"
+
+
+def validated_dtype() -> str:
+    """Dtype real para cargar modelos, compatible con el hardware.
+
+    - "auto": bfloat16 si la GPU lo soporta, si no float16 (CPU: float32).
+    - Explícito: se valida la compatibilidad antes de cargar; por ejemplo,
+      "bfloat16" en una GPU que no lo soporta falla con un mensaje claro en
+      lugar de asumir que todas las GPUs lo soportan.
+    """
+    requested = settings.runtime.dtype
+    if requested in ("bfloat16", "float16", "float32"):
+        device = validated_device()
+        if requested == "bfloat16" and device.startswith("cuda:") and not _supports_bf16(device):
+            raise ValueError(
+                f"dtype 'bfloat16' no soportado por {device} "
+                f"(use 'auto', 'float16' o 'float32')"
+            )
+        return requested
+    return resolve_dtype()
 
 
 def validate_dtype(dtype: str) -> bool:

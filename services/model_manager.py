@@ -13,8 +13,7 @@ import torch
 from qwen_tts import Qwen3TTSModel
 
 from config.settings import settings
-from services.config_service import resolve_device
-from utils.gpu import get_dtype
+from services.config_service import validated_device, validated_dtype
 
 logger = logging.getLogger("tts")
 
@@ -268,8 +267,10 @@ class ModelManager:
 
         try:
             def _load():
-                dtype = get_dtype()
-                device = resolve_device()
+                # validar el dispositivo y dtype configurados ANTES de cargar
+                # (fallo claro si la GPU no existe o no soporta bfloat16)
+                device = validated_device()
+                dtype = validated_dtype()
                 logger.info(f"Cargando en dispositivo: {device} (dtype: {dtype})")
                 model = Qwen3TTSModel.from_pretrained(
                     model_path,

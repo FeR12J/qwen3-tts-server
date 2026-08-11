@@ -78,3 +78,13 @@ class QueueService:
     def register_playback(self, proc):
         """Registrar el proceso de reproducción en curso."""
         self._playback_proc[0] = proc
+
+    async def stop_playback(self) -> None:
+        """Detener la reproducción en curso, si la hay (usado en el apagado)."""
+        async with self._playback_lock:
+            proc = self._playback_proc[0]
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+                await asyncio.to_thread(proc.wait)
+                logger.info("Reproducción en curso detenida")
+            self._playback_proc[0] = None

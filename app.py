@@ -3,11 +3,13 @@
 
 import os
 import asyncio
+import gc
 import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+import torch
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +24,7 @@ from services.model_manager import ModelManager, GPUOutOfMemoryError, GPU_OOM_ME
 from services.voice_manager import VoiceManager
 from services.audio_service import AudioService
 from services.whisper_service import configure as configure_whisper
+from services import whisper_service
 from services.metrics_service import MetricsService
 from services.tts_service import TTSService, TTSValidationError
 from routes import (
@@ -103,7 +106,13 @@ async def audio_cleanup_loop(ctx: AppContext):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Ciclo de vida de la aplicación."""
+    """Ciclo de vida de la aplicación.
+
+    El apagado lo inicia uvicorn al recibir SIGTERM/SIGINT: primero deja de
+    aceptar conexiones nuevas y espera a que terminen las peticiones en
+    curso (incluidas las inferencias activas); solo entonces se ejecuta
+    aquí la liberación ordenada de recursos.
+    """
     ctx = build_context()
     load_runtime_config()
     apply_log_level()
@@ -113,7 +122,7 @@ async def lifespan(app: FastAPI):
         await startup_procedure(ctx)
         yield
     finally:
-        cleanup_task.cancel()
+        await shutdown_procedure(ctx, cleanup_task)
 
 
 # Inicializar aplicación FastAPI
@@ -223,6 +232,68 @@ async def startup_procedure(ctx: AppContext):
     print(f"INFO:     Documentación de la API: http://localhost:{settings.server.port}/webui/docs\n")
 
 
+async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
+    """Apagado ordenado del servidor (al recibir SIGTERM/SIGINT).
+
+    uvicorn ya ha hecho, antes de llegar aquí: (1) dejar de aceptar
+    conexiones nuevas y (2) esperar a que terminen las peticiones en curso
+    (jobs activos incluidos, sin cortar inferencias a mitad de ejecución).
+
+    Aquí solo queda: (3) detener workers/tareas de fondo, (4) liberar
+    modelos y VRAM, (5) limpiar recursos, (6) salir.
+    """
+    print("\n" + "." * 30)
+    print("Apagando servidor...")
+    print("." * 30)
+
+    # 3. Detener tareas de fondo (limpieza periódica de audios)
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+
+    # 5. Detener la reproducción en curso, si la hay
+    try:
+        await ctx.queue.stop_playback()
+    except Exception as e:
+        logger.warning(f"Error deteniendo la reproducción: {e}")
+
+    # 4. Liberar modelos (TTS y Whisper). Ya no hay inferencias en curso,
+    #    pero se toma el model_lock para respetar la exclusión mutua.
+    async with ctx.queue.model_lock():
+        try:
+            active = await ctx.models.get_active_model()
+            if active is not None:
+                await ctx.models.unload_model(active.model_id)
+                ctx.voices.unload_voice()
+                logger.info(f"Modelo TTS descargado: {active.model_id}")
+        except Exception as e:
+            logger.warning(f"Error descargando el modelo TTS: {e}")
+        try:
+            if whisper_service.unload_if_loaded():
+                logger.info("Modelo Whisper descargado")
+        except Exception as e:
+            logger.warning(f"Error descargando Whisper: {e}")
+
+    # Liberar memoria sobrante antes de salir
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    print("." * 30)
+    print("Servidor detenido correctamente")
+    print("." * 30)
+
+
 # Punto de entrada principal
 if __name__ == "__main__":
-    uvicorn.run(app, host=settings.server.host, port=settings.server.port)
+    config = uvicorn.Config(
+        app,
+        host=settings.server.host,
+        port=settings.server.port,
+        # Apagado ordenado: esperar (sin límite) a que terminen las peticiones
+        # e inferencias en curso al recibir SIGTERM/SIGINT, en lugar de cortarlas.
+        timeout_graceful_shutdown=None,
+    )
+    uvicorn.Server(config).run()
