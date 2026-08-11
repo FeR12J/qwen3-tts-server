@@ -265,7 +265,7 @@ curl -X POST http://localhost:8001/webui/api/apikeys/&lt;id&gt;/toggle
 curl -X DELETE http://localhost:8001/webui/api/apikeys/&lt;id&gt;</pre>
 
 <h2>Notas</h2>
-<div class="alert">El audio se devuelve como <code>audio/wav</code>. Por defecto no se guarda en disco; con <code>save_audios</code> se guarda una copia en <code>audios/</code>. Los audios con más de <code>storage.generated_audio_ttl_hours</code> (por defecto 24 h) se limpian automáticamente al arrancar y cada hora.</div>
+<div class="alert">El audio se devuelve como <code>audio/wav</code>. Por defecto no se guarda en disco; con <code>save_audios</code> se guarda una copia en <code>audios/</code>. Los nombres incluyen un id único (<code>tts_&lt;fecha&gt;_&lt;request_id&gt;_&lt;chunk&gt;.wav</code>, con sufijo aleatorio si no hay id): nunca colisionan aunque dos generaciones ocurran en el mismo segundo. Los audios con más de <code>storage.generated_audio_ttl_hours</code> (por defecto 24 h) se limpian automáticamente al arrancar y cada hora.</div>
 <div class="alert warn">Las claves se almacenan como hash SHA-256. Si pierdes una clave, elimínala y crea otra.</div>
 <div class="alert">Documentación interactiva del framework disponible en <a href="/docs" target="_blank">/docs</a> (Swagger UI).</div>
 

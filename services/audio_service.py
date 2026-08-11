@@ -11,11 +11,13 @@ Decodificación: soundfile (wav/flac/ogg) con fallback a ffmpeg (mp3/m4a...).
 
 import io
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -35,6 +37,16 @@ TTS_SAMPLE_RATE = 24000
 
 # Frecuencia de muestreo canónica para voz de referencia y Whisper (16 kHz)
 SPEECH_SAMPLE_RATE = 16000
+
+# Caracteres admitidos en identificadores usados como nombre de archivo
+_SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _safe_id(value) -> str:
+    """Sanitizar un identificador para su uso en nombres de archivo."""
+    if not value:
+        return ""
+    return _SAFE_ID_RE.sub("", str(value))[:32]
 
 
 class AudioValidationError(ValueError):
@@ -523,11 +535,22 @@ class AudioService:
 
     # -- Guardado ----------------------------------------------------------
 
-    def save(self, wav, sr, prefix: str, format: str = "wav") -> str:
+    def save(self, wav, sr, prefix: str, format: str = "wav",
+             request_id: str = None, chunk_index: int = None) -> str:
         """Guardar audio en disco y devolver la ruta.
 
         No guarda nada si save_audios está desactivado en la configuración
         en tiempo de ejecución (devuelve cadena vacía).
+
+        El nombre incluye un identificador único: no se confía solo en el
+        timestamp (precisión de 1 segundo: dos guardados en el mismo segundo
+        colisionarían y el segundo machacaría al primero, algo plausible con
+        streaming multi-fragmento o peticiones concurrentes). Con
+        request_id (+ chunk_index) el nombre es trazable; sin ellos, un
+        sufijo aleatorio garantiza unicidad.
+
+        Formato: ``<prefix>_<YYYYMMDD_HHMMSS>_<id>.wav``, con ``id`` =
+        ``<request_id>_<chunk_index>``, ``<request_id>`` o un sufijo aleatorio.
         """
         fmt = str(format).lower().lstrip(".")
         from services.config_service import get_runtime_config
@@ -535,7 +558,14 @@ class AudioService:
             logger.info(f"Guardado de audios desactivado (se omite {prefix}_*.{fmt})")
             return ""
         dt = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = f"{self._config.paths.audios_dir}/{prefix}_{dt}.{fmt}"
+        rid = _safe_id(request_id)
+        if rid and chunk_index is not None:
+            unique = f"{rid}_{int(chunk_index)}"
+        elif rid:
+            unique = rid
+        else:
+            unique = uuid.uuid4().hex[:6]
+        path = f"{self._config.paths.audios_dir}/{prefix}_{dt}_{unique}.{fmt}"
         with open(path, "wb") as f:
             f.write(self.convert(wav, sr, fmt))
         logger.info(f"Audio guardado: {path}")

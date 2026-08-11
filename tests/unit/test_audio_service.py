@@ -357,3 +357,32 @@ def test_save_writes_when_save_audios_enabled(service, tmp_path, monkeypatch):
     audio, sr = svc.load(path)
     assert sr == SR and audio.shape[0] == int(SR * DURATION)
 
+
+def test_save_names_never_collide_same_second(service, tmp_path, monkeypatch):
+    """Dos guardados en el mismo segundo no pueden machacarse (sin confiar
+    solo en el timestamp de 1 s de precisión)."""
+    import os
+    from services import config_service
+    monkeypatch.setattr(config_service.settings.runtime, "save_audios", True)
+    config = SimpleNamespace(paths=SimpleNamespace(audios_dir=str(tmp_path)))
+    svc = AudioService(config, None)
+
+    # Streaming: mismo request, distintos fragmentos -> request_id + chunk_index.
+    p1 = svc.save(_sine(), SR, "tts_stream", request_id="req_8f3a12", chunk_index=0)
+    p2 = svc.save(_sine(), SR, "tts_stream", request_id="req_8f3a12", chunk_index=1)
+    assert p1 != p2
+    assert "req_8f3a12_0" in p1 and "req_8f3a12_1" in p2
+    assert os.path.exists(p1) and os.path.exists(p2)
+
+    # Peticiones distintas (mismo prefijo, sin id) -> sufijo aleatorio único.
+    p3 = svc.save(_sine(), SR, "tts")
+    p4 = svc.save(_sine(), SR, "tts")
+    assert p3 != p4
+    assert os.path.exists(p3) and os.path.exists(p4)
+
+    # Solo el id sanitizado entra en el nombre (nada de rutas/caracteres raros).
+    p5 = svc.save(_sine(), SR, "tts", request_id="../../etc/passwd\x00A")
+    assert "/../" not in p5
+    assert str(tmp_path / os.path.basename(p5)) == p5
+    assert os.path.exists(p5)
+

@@ -9,6 +9,7 @@ nunca manipula la instancia del modelo directamente).
 """
 
 import os
+import uuid
 import logging
 
 from dataclasses import dataclass
@@ -319,12 +320,23 @@ class TTSService:
             wavs, sr = await self._models.generate_custom_voice(**kwargs)
         return wavs, sr
 
-    def _encode(self, request: TTSRequest, wav, sr) -> bytes:
+    def _encode(self, request: TTSRequest, wav, sr, http_request=None) -> bytes:
         """Guardar copia y codificar el audio según output_format."""
-        self._audio.save(wav, sr, "tts")
+        self._audio.save(wav, sr, "tts", request_id=self._request_id(http_request))
         if request.output_format == "pcm":
             return self._audio.encode_pcm(wav, sr)
         return self._audio.encode_wav(wav, sr)
+
+    @staticmethod
+    def _request_id(http_request) -> str:
+        """Id de trazabilidad de la petición (x-request-id o uno generado).
+
+        Se usa en los nombres de los audios guardados (AudioService.save)
+        para que nunca colisionen y sean trazables.
+        """
+        if http_request is None:
+            return uuid.uuid4().hex
+        return http_request.headers.get("x-request-id") or uuid.uuid4().hex
 
     async def synthesize(self, request: TTSRequest, http_request=None) -> SynthesisResult:
         """Pipeline completo de síntesis: validación + generación + codificación.
@@ -376,7 +388,7 @@ class TTSService:
                     parts.append(wavs[0])
                 wav = self._concat_wavs(parts)
 
-            audio = self._encode(request, wav, sr)
+            audio = self._encode(request, wav, sr, http_request=http_request)
             logger.info(
                 f"Generación completada (model: {info.model_id}, "
                 f"{info.model_type}, {len(chunks)} fragmento(s))"
@@ -447,14 +459,20 @@ class TTSService:
                     http_request, (request.text or request.input or "")
                 )
 
-            for sentence in plan.sentences:
+            for index, sentence in enumerate(plan.sentences):
                 info = await self._models.get_active_model()
                 if info is None or info.model_id != plan.info.model_id:
                     # El modelo cambió mientras se preparaba el stream
                     info = await self._resolve_model(request)
                 wavs, sr = await self._generate_one(request, sentence, info)
                 audio = self._audio.encode_pcm(wavs[0], sr)
-                self._audio.save(wavs[0], sr, "tts_stream")
+                # request_id + chunk_index: nombre único y trazable por
+                # fragmento (el timestamp solo tiene precisión de 1 s).
+                self._audio.save(
+                    wavs[0], sr, "tts_stream",
+                    request_id=self._request_id(http_request),
+                    chunk_index=index,
+                )
                 logger.info(f"Fragmento emitido ({len(sentence)} chars, model: {info.model_id})")
                 yield SynthesisResult(
                     audio=audio,
