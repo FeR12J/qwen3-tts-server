@@ -421,6 +421,10 @@ footer a:hover { text-decoration:underline; }
             <label for="cfgLogRequests">Registrar peticiones en requests.log</label>
             <select id="cfgLogRequests"><option value="true">Sí</option><option value="false">No</option></select>
           </div>
+          <div>
+            <label for="cfgStreaming">Streaming en <code>/tts/stream</code></label>
+            <select id="cfgStreaming"><option value="true">Sí</option><option value="false">No</option></select>
+          </div>
         </div>
         <div class="hint" style="margin:12px 0 4px">Gestión de VRAM compartida TTS &lt;-&gt; Whisper (GPUs pequeñas). En GPUs grandes, pon ambos en &laquo;No&raquo; para mantener los dos modelos cargados.</div>
         <div class="row" style="gap:14px; align-items:flex-start">
@@ -450,7 +454,7 @@ footer a:hover { text-decoration:underline; }
           </label>
           <div style="font-size:13px">
             <b>Exigir clave API</b>
-            <div class="hint" style="margin-top:2px">Protege <code>/tts</code>, <code>/tts/play</code>, <code>/tts/audio/speech</code>, <code>/model/*</code> y <code>/voice/*</code></div>
+            <div class="hint" style="margin-top:2px">Protege <code>/tts</code>, <code>/tts/stream</code>, <code>/tts/play</code>, <code>/tts/audio/speech</code>, <code>/model/*</code> y <code>/voice/*</code></div>
           </div>
         </div>
 
@@ -693,6 +697,7 @@ async function loadConfig() {
     $('cfgLogLevel').value = c.log_level;
     $('cfgDtype').value = c.dtype || 'auto';
     $('cfgLogRequests').value = String(c.log_requests);
+    $('cfgStreaming').value = String(c.streaming_enabled !== false);
     $('cfgUnloadTtsForWhisper').value = String(c.unload_tts_for_whisper);
     $('cfgUnloadWhisperForTts').value = String(c.unload_whisper_for_tts);
     $('keysGlobal').checked = !!c.api_keys_enabled;
@@ -710,6 +715,7 @@ async function saveConfig() {
     log_level: $('cfgLogLevel').value,
     dtype: $('cfgDtype').value,
     log_requests: $('cfgLogRequests').value === 'true',
+    streaming_enabled: $('cfgStreaming').value === 'true',
     unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',
     unload_whisper_for_tts: $('cfgUnloadWhisperForTts').value === 'true',
     device: $('cfgDevice').value

@@ -17,7 +17,7 @@ qwen3-tts-server/
 │   ├── system.py        # ConfigUpdate, ApiKeyCreate, SystemStatus
 │   └── errors.py        # ErrorResponse
 ├── routes/              # Endpoints HTTP (sin lógica de inferencia)
-│   ├── tts.py           # /tts, /tts/play, /tts/audio/speech
+│   ├── tts.py           # /tts, /tts/stream, /tts/play, /tts/audio/speech
 │   ├── models.py        # /model/load, /model/unload, /models
 │   ├── voices.py        # /voice/load, /voice/create, /voice/unload, /voices
 │   ├── system.py        # / (estado del servidor)
@@ -96,6 +96,7 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 | PUBLIC | GET | `/webui`, `/webui/docs` | Panel y documentación |
 | PUBLIC | GET | `/webui/api/devices` | GPUs disponibles y dispositivo en uso |
 | PROTECTED | POST | `/tts` | Generar TTS (estándar) |
+| PROTECTED | POST | `/tts/stream` | TTS en streaming real: audio por frases, WAV o PCM |
 | PROTECTED | POST | `/tts/play` | Generar TTS y reproducirlo en este equipo |
 | PROTECTED | POST | `/tts/audio/speech` | Generar TTS (compatible OpenWebUI) |
 | PROTECTED | POST | `/transcribe` | Transcribir audio a texto con Whisper |
@@ -170,7 +171,7 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 - Precedencia: variables de entorno > `data/runtime.json` > defaults. Las variables `QWEN_TTS_DEVICE`, `QWEN_TTS_DTYPE` y `QWEN_TTS_REQUIRE_API_KEY` (configuración en tiempo de ejecución) tienen prioridad sobre el archivo persistido.
 
 ### Configuración en tiempo de ejecución (`data/runtime.json`)
-Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API.
+Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API y streaming (`streaming_enabled`, habilita/desactiva `/tts/stream`).
 
 ## Tests
 

@@ -115,6 +115,8 @@ class RuntimeSettings(BaseModel):
     log_level: str = "INFO"
     log_requests: bool = True
     api_keys_enabled: bool = False
+    # Endpoint /tts/stream habilitado (generación por frases en streaming)
+    streaming_enabled: bool = True
     # Dispositivo de inferencia: "auto" (GPU si hay), "cuda:N" o "cpu"
     device: str = "auto"
     # dtype: "auto" (según GPU), "bfloat16", "float16" o "float32"

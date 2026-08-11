@@ -18,6 +18,8 @@ from fastapi import HTTPException
 from schemas.tts import TTSRequest
 from security.validation import validate_text
 from services.config_service import get_runtime_config
+from services.model_manager import ModelInfo
+from utils.text import split_sentences
 
 logger = logging.getLogger("tts")
 
@@ -39,6 +41,17 @@ class SynthesisResult:
     sample_rate: int
     model_id: str
     model_type: str
+
+
+@dataclass
+class StreamPlan:
+    """Plan de streaming validado (frases + modelo resuelto).
+
+    Se construye antes de abrir la respuesta HTTP para poder devolver
+    errores 400 con un status HTTP real.
+    """
+    sentences: list
+    info: ModelInfo
 
 
 class TTSService:
@@ -157,24 +170,86 @@ class TTSService:
 
     # -- Síntesis -----------------------------------------------------------
 
-    async def synthesize(self, request: TTSRequest, http_request=None) -> SynthesisResult:
-        """Pipeline completo de síntesis: validación + generación + codificación.
-
-        Único punto de generación del servidor; todos los endpoints TTS pasan
-        por aquí. Ejecuta dentro de queue.inference_lock().
-        """
-        from services import whisper_service
-        from services.gpu_management import prepare_for_tts
-
+    def _require_text(self, request: TTSRequest) -> str:
         text = (request.text or request.input or "").strip()
         if not text:
             raise TTSValidationError("Campo 'text' o 'input' requerido")
-
         rc = get_runtime_config()
         try:
             validate_text(text, rc["max_text_chars"])
         except HTTPException as e:
             raise TTSValidationError(e.detail)
+        return text
+
+    def _build_kwargs(self, request: TTSRequest, info: ModelInfo) -> dict:
+        """Validar según el tipo de modelo y construir kwargs de generación.
+
+        No toca GPU: solo resuelve/valida referencias de voz, idioma y
+        parámetros según el modelo activo.
+        """
+        kwargs = {"language": self._validate_language(request, info)}
+        if request.temperature is not None:
+            # Parámetro real de generación de la librería Qwen3-TTS.
+            kwargs["temperature"] = request.temperature
+
+        model_type = info.model_type
+        if model_type == "voice_design":
+            kwargs["instruct"] = self._validate_voice_design(request)
+        elif model_type == "base":
+            ref = self._validate_base(request)
+            if ref is None:
+                kwargs["voice_clone_prompt"] = self._voices.clone_prompt
+            else:
+                kwargs["ref_audio"], kwargs["ref_text"] = ref
+        else:
+            kwargs["speaker"] = self._validate_custom_voice(request, info)
+            instruct = (
+                request.voice_description
+                or request.instruct
+                or get_runtime_config().get("def_instruct")
+            ) or None
+            if instruct:
+                kwargs["instruct"] = instruct
+        return kwargs
+
+    async def _generate_one(self, request: TTSRequest, text: str, info: ModelInfo):
+        """Generar audio para un texto con el modelo activo (usa GPU)."""
+        kwargs = self._build_kwargs(request, info)
+        kwargs["text"] = text
+        model_type = info.model_type
+
+        if model_type == "voice_design":
+            logger.info(f"Usando voice design (description: {kwargs['instruct'][:60]})")
+            wavs, sr = await self._models.generate_voice_design(**kwargs)
+        elif model_type == "base":
+            if "voice_clone_prompt" in kwargs:
+                logger.info("Usando voice cloning (voz cargada)")
+            else:
+                logger.info(f"Usando voz de referencia: {kwargs['ref_audio']}")
+            wavs, sr = await self._models.generate_voice_clone(**kwargs)
+        else:
+            logger.info(f"Usando voz por defecto (speaker={kwargs['speaker']})")
+            wavs, sr = await self._models.generate_custom_voice(**kwargs)
+        return wavs, sr
+
+    def _encode(self, request: TTSRequest, wav, sr) -> bytes:
+        """Guardar copia y codificar el audio según output_format."""
+        self._audio.save(wav, sr, "tts")
+        if request.output_format == "pcm":
+            return self._audio.encode_pcm(wav, sr)
+        return self._audio.encode_wav(wav, sr)
+
+    async def synthesize(self, request: TTSRequest, http_request=None) -> SynthesisResult:
+        """Pipeline completo de síntesis: validación + generación + codificación.
+
+        Único punto de generación no-streaming del servidor; todos los
+        endpoints TTS pasan por aquí. Ejecuta dentro de queue.inference_lock().
+        """
+        from services import whisper_service
+        from services.gpu_management import prepare_for_tts
+
+        text = self._require_text(request)
+        rc = get_runtime_config()
 
         async with self._queue.inference_lock():
             await prepare_for_tts(self._models, self._voices, whisper_service)
@@ -183,64 +258,77 @@ class TTSService:
                 self._metrics.log_request(http_request, text)
 
             info = await self._resolve_model(request)
-            model_type = info.model_type
-            lang = self._validate_language(request, info)
+            wavs, sr = await self._generate_one(request, text, info)
+            audio = self._encode(request, wavs[0], sr)
 
-            # Validación según el tipo de modelo (antes de consumir GPU)
-            generation_kwargs = {}
-            if request.temperature is not None:
-                # Parámetro real de generación de la librería Qwen3-TTS.
-                generation_kwargs["temperature"] = request.temperature
-
-            if model_type == "voice_design":
-                description = self._validate_voice_design(request)
-                logger.info(f"Usando voice design (description: {description[:60]})")
-                generation_kwargs.update(
-                    {"text": text, "language": lang, "instruct": description}
-                )
-                wavs, sr = await self._models.generate_voice_design(**generation_kwargs)
-            elif model_type == "base":
-                ref = self._validate_base(request)
-                if ref is None:
-                    logger.info("Usando voice cloning (voz cargada)")
-                    generation_kwargs.update(
-                        {"text": text, "language": lang,
-                         "voice_clone_prompt": self._voices.clone_prompt}
-                    )
-                else:
-                    wav_path, ref_text = ref
-                    logger.info(f"Usando voz de referencia: {wav_path}")
-                    generation_kwargs.update(
-                        {"text": text, "language": lang,
-                         "ref_audio": wav_path, "ref_text": ref_text}
-                    )
-                wavs, sr = await self._models.generate_voice_clone(**generation_kwargs)
-            else:
-                speaker = self._validate_custom_voice(request, info)
-                rc = get_runtime_config()
-                instruct = (
-                    request.voice_description or request.instruct or rc.get("def_instruct")
-                ) or None
-                logger.info(f"Usando voz por defecto (speaker={speaker})")
-                generation_kwargs.update({"text": text, "language": lang, "speaker": speaker})
-                if instruct:
-                    generation_kwargs["instruct"] = instruct
-                wavs, sr = await self._models.generate_custom_voice(**generation_kwargs)
-
-            # Codificar audio
-            self._audio.save(wavs[0], sr, "tts")
-            if request.output_format == "pcm":
-                audio = self._audio.encode_pcm(wavs[0], sr)
-            else:
-                audio = self._audio.encode_wav(wavs[0], sr)
-
-            logger.info(f"Generación completada (model: {info.model_id}, {model_type})")
+            logger.info(f"Generación completada (model: {info.model_id}, {info.model_type})")
             return SynthesisResult(
                 audio=audio,
                 sample_rate=sr,
                 model_id=info.model_id,
-                model_type=model_type,
+                model_type=info.model_type,
             )
+
+    async def stream_plan(self, request: TTSRequest) -> StreamPlan:
+        """Validar la petición y dividir el texto en frases ANTES del response.
+
+        Se ejecuta antes de abrir el stream: cualquier error de validación
+        (texto, modelo, idioma, voz...) devuelve un 400 HTTP real, no un
+        stream truncado a mitad.
+        """
+        text = self._require_text(request)
+        rc = get_runtime_config()
+        sentences = split_sentences(text, rc["max_text_chars"])
+        if not sentences:
+            raise TTSValidationError(
+                "No se pudo dividir el texto en frases para streaming."
+            )
+        logger.info(f"Streaming: {len(sentences)} frases, {len(text)} caracteres")
+
+        async with self._queue.inference_lock():
+            info = await self._resolve_model(request)
+            self._build_kwargs(request, info)  # validación sin GPU
+
+        return StreamPlan(sentences=sentences, info=info)
+
+    async def stream_synthesize(self, request: TTSRequest, plan: StreamPlan,
+                                http_request=None):
+        """Generador de streaming real: audio por frases en cuanto terminan.
+
+        Cada yield es el PCM 16-bit LE de una frase (sin cabecera WAV: el
+        ensamblado del formato es responsabilidad de la capa HTTP). Mantiene
+        queue.inference_lock() durante todo el stream (GPU exclusiva) y solo
+        devuelve tras generar la frase: el primer audio llega cuando acaba
+        la primera frase, no al terminar todo el texto.
+        """
+        from services import whisper_service
+        from services.gpu_management import prepare_for_tts
+
+        rc = get_runtime_config()
+
+        async with self._queue.inference_lock():
+            await prepare_for_tts(self._models, self._voices, whisper_service)
+
+            if rc.get("log_requests", True) and http_request is not None and self._metrics:
+                self._metrics.log_request(
+                    http_request, (request.text or request.input or "")
+                )
+
+            for sentence in plan.sentences:
+                info = await self._models.get_active_model()
+                if info is None or info.model_id != plan.info.model_id:
+                    # El modelo cambió mientras se preparaba el stream
+                    info = await self._resolve_model(request)
+                wavs, sr = await self._generate_one(request, sentence, info)
+                audio = self._audio.encode_pcm(wavs[0], sr)
+                self._audio.save(wavs[0], sr, "tts_stream")
+                logger.info(f"Frase emitida ({len(sentence)} chars, model: {info.model_id})")
+                yield SynthesisResult(
+                    audio=audio,
+                    sample_rate=sr,
+                    model_id=info.model_id,
+                    model_type=info.model_type,
+                )
 
     async def _resolve_model(self, request: TTSRequest):
         """Modelo activo, o el solicitado en `request.model` (cambiando si procede).

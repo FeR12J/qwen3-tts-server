@@ -19,6 +19,9 @@ logger = logging.getLogger("tts")
 # Reproductores de audio disponibles en el sistema para reproducir en este equipo
 PLAYERS = [p for p in ["mpv", "ffplay", "paplay", "aplay", "play"] if shutil.which(p)]
 
+# Frecuencia de muestreo de salida de los modelos Qwen3-TTS (24 kHz)
+TTS_SAMPLE_RATE = 24000
+
 
 class AudioService:
     """Operaciones de audio del servidor."""
@@ -39,6 +42,23 @@ class AudioService:
         import numpy as np
         pcm = np.clip(wav, -1.0, 1.0)
         return (pcm * 32767).astype(np.int16).tobytes()
+
+    def wav_stream_header(self, sr: int, channels: int = 1, bits: int = 16) -> bytes:
+        """Cabecera WAV para streaming: tamaños desconocidos (0xFFFFFFFF).
+
+        Válida para flujos chunked: los reproductores (ffmpeg, mpv, aplay...)
+        aceptan esta marca de "tamaño indeterminado" y leen hasta el cierre
+        de la conexión.
+        """
+        import struct
+        byte_rate = sr * channels * bits // 8
+        block_align = channels * bits // 8
+        header = b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVE"
+        header += b"fmt " + struct.pack(
+            "<IHHIIHH", 16, 1, channels, sr, byte_rate, block_align, bits
+        )
+        header += b"data" + struct.pack("<I", 0xFFFFFFFF)
+        return header
 
     def save(self, wav, sr, prefix: str) -> str:
         """Guardar audio WAV en disco y devolver la ruta."""

@@ -15,6 +15,7 @@ class ConfigUpdate(BaseModel):
     log_level: Optional[str] = None
     log_requests: Optional[bool] = None
     api_keys_enabled: Optional[bool] = None
+    streaming_enabled: Optional[bool] = None
     device: Optional[str] = None
     dtype: Optional[str] = None
     unload_tts_for_whisper: Optional[bool] = None

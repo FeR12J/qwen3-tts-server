@@ -71,6 +71,6 @@ def validate_config_update(changes: dict, config_service):
             400,
             f"dtype inválido. Válidos: {', '.join(config_service.VALID_DTYPES)}",
         )
-    for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts"):
+    for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts", "streaming_enabled"):
         if flag in changes and not isinstance(changes[flag], bool):
             raise HTTPException(400, f"{flag} debe ser true o false")

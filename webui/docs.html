@@ -64,6 +64,7 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
     <tr><td><span class="method m-get">GET</span></td><td><code>/version</code></td><td>Versión del servidor y de las librerías (<code>qwen-tts</code>, <code>torch</code>, <code>transformers</code>, <code>cuda</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/</code></td><td>Estado del servidor (modelo actual, voice cloning, VRAM)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts</code></td><td>Generar audio WAV (texto, language, speaker, instruct)</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/tts/stream</code></td><td>Generar audio en streaming real: emite cada frase en cuanto se genera (WAV o PCM)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/play</code></td><td>Generar y reproducir el audio en el equipo del servidor</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/audio/speech</code></td><td>Generar audio compatible con OpenWebUI (text o input)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/model/load</code></td><td>Cargar un modelo local <code>{ "model_id": "..." }</code></td><td>Admin</td></tr>
@@ -156,6 +157,25 @@ with open("audio.wav", "wb") as f:
     f.write(resp.content)
 print("Audio guardado en audio.wav")</pre>
 
+<h2>Streaming</h2>
+<p><code>POST /tts/stream</code> genera audio <b>en streaming real</b>: divide el texto en frases y emite cada una en cuanto termina de generarse, sin esperar a todo el texto. La primera frase llega en la primera generación; no se trata de un WAV completo troceado después.</p>
+<p>Formatos: <code>output_format: "wav"</code> (por defecto, WAV streaming con cabecera de tamaño indeterminado) o <code>output_format: "pcm"</code> (PCM 16-bit LE; la frecuencia se indica en la cabecera <code>X-Audio-Rate</code>).</p>
+<pre># Reproducir en tiempo real (aplay espera el flujo completo)
+curl -N -X POST http://localhost:8001/tts/stream \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -d '{"text": "Primera frase. Segunda frase. Tercera frase.", "language": "Spanish"}' \
+  | ffplay -nodisp -autoexit - &
+
+# PCM sin cabecera
+curl -N -X POST http://localhost:8001/tts/stream \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hola mundo.", "output_format": "pcm"}' \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  | aplay -r 24000 -f S16_LE -c 1</pre>
+<p>Las frases se dividen respetando abreviaturas (<code>Sr.</code>) y decimales (<code>3.14</code>); el límite de caracteres por frase es <code>max_text_chars</code>. El primer byte tarda lo que tarda la primera frase; el resto llega frase a frase.</p>
+<p>Si <code>streaming_enabled</code> está en <code>false</code> (configuración en tiempo de ejecución), <code>/tts/stream</code> devuelve <code>404</code> y solo están disponibles los endpoints no-streaming.</p>
+
 <h2>OpenWebUI</h2>
 <p>En OpenWebUI, configura un <b>engine de audio (pipeline TTS)</b> o usa la función externa apuntando a:</p>
 <pre>URL: http://HOST_DEL_SERVIDOR:8001/tts/audio/speech
@@ -172,6 +192,7 @@ API key: qt-tu-clave-aqui   (si las claves están activadas)</pre>
   "def_instruct": "Habla en español...",  // instrucción por defecto
   "log_level": "INFO",             // DEBUG | INFO | WARNING | ERROR
   "log_requests": true,            // registrar peticiones en requests.log
+  "streaming_enabled": true,       // habilitar el endpoint /tts/stream
   "api_keys_enabled": false,       // exigir clave API en el servicio
   "device": "auto"                 // auto | cpu | cuda:0 | cuda:1 | ...
 }</pre>

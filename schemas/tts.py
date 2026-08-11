@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Esquemas de las solicitudes de TTS.
 
-Schema unificado para todos los endpoints TTS (/tts, /tts/play,
+Schema unificado para todos los endpoints TTS (/tts, /tts/stream, /tts/play,
 /tts/audio/speech). Los campos corresponden a parámetros reales del
 modelo Qwen3-TTS instalado; la validación según el tipo de modelo
 (decide qué campos son obligatorios) se hace en services/tts_service.py
