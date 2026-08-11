@@ -6,6 +6,7 @@ import traceback
 from typing import Optional
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from security.auth import require_admin
 from security.permissions import require_model_loaded, ensure_voice_cloning_supported
@@ -244,6 +245,16 @@ def create_voices_routes(app: FastAPI, ctx):
                 "status": "ok",
                 "message": "Voice cloning desactivado",
             }
+
+    @app.get("/voices/{voice_id}/audio", dependencies=[Depends(require_admin)])
+    async def voice_audio(voice_id: str):
+        """Audio de referencia de una voz (preview en el panel)."""
+        reject_path_traversal(voice_id, "voice_id")
+        files = ctx.voices.get_reference(voice_id)
+        if files is None:
+            raise HTTPException(404, f"Voz '{voice_id}' no encontrada o sin audio de referencia")
+        wav_path, _ = files
+        return FileResponse(wav_path, media_type="audio/wav")
 
     @app.get("/voices")
     @app.get("/tts/audio/voices")

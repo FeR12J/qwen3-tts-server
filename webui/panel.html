@@ -149,6 +149,19 @@ tr:hover td { background:rgba(255,255,255,.02); }
 .hint code, p code { background:rgba(255,255,255,.06); padding:1px 6px; border-radius:5px; font-size:12px; }
 .section-title { font-size:13px; font-weight:600; color:var(--accent); border-top:1px solid var(--border); padding-top:14px; margin:20px 0 10px; letter-spacing:.2px; }
 
+/* ---------- Dashboard ---------- */
+.stat-row {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;
+}
+.stat-row:last-child { border-bottom:none; }
+.stat-row .k { color:var(--dim); }
+.stat-row .v { font-weight:600; white-space:nowrap; }
+.stat-row .v.mono { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; }
+.gpu-bar { height:6px; border-radius:999px; background:var(--card2); overflow:hidden; margin-top:4px; }
+.gpu-bar i { display:block; height:100%; border-radius:999px; background:var(--grad); transition:width .4s; }
+.dash-refresh { font-size:11px; color:var(--dim); margin-left:auto; }
+
 .divider { height:1px; background:var(--border); margin:18px 0; }
 
 /* ---------- Switch ---------- */
@@ -240,6 +253,53 @@ footer a:hover { text-decoration:underline; }
 
 <main>
 
+  <!-- Dashboard -->
+  <div class="grid2">
+    <section class="card">
+      <div class="card-title">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+        GPU <span class="dash-refresh" id="dashGpuRefresh"></span>
+      </div>
+      <div class="card-sub">Dispositivo de inferencia activo.</div>
+      <div class="stat-row"><span class="k">Nombre</span><span class="v" id="dashGpuName">—</span></div>
+      <div class="stat-row"><span class="k">VRAM total</span><span class="v" id="dashVramTotal">—</span></div>
+      <div class="stat-row"><span class="k">VRAM usada</span><span class="v" id="dashVramUsed">—</span></div>
+      <div class="stat-row"><span class="k">VRAM libre</span><span class="v" id="dashVramFree">—</span></div>
+      <div class="gpu-bar"><i id="dashVramBar" style="width:0%"></i></div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0H3a9 9 0 0 0 8 8.94V23h2v-3.06A9 9 0 0 0 21 11h-2z"/></svg></div>
+        TTS <span class="dash-refresh" id="dashTtsRefresh"></span>
+      </div>
+      <div class="card-sub">Modelo de síntesis cargado.</div>
+      <div class="stat-row"><span class="k">Modelo</span><span class="v mono" id="dashTtsModel">—</span></div>
+      <div class="stat-row"><span class="k">Estado</span><span class="v" id="dashTtsState">—</span></div>
+      <div class="stat-row"><span class="k">Requests activas</span><span class="v" id="dashTtsReq">—</span></div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M2 5h20M2 9h20M2 13h12M2 17h8M17 13l4 4m-4 0 4-4"/></svg></div>
+        Whisper <span class="dash-refresh" id="dashWhisperRefresh"></span>
+      </div>
+      <div class="card-sub">Modelo de transcripción local.</div>
+      <div class="stat-row"><span class="k">Modelo</span><span class="v mono" id="dashWhisperModel">—</span></div>
+      <div class="stat-row"><span class="k">Estado</span><span class="v" id="dashWhisperState">—</span></div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 20V8l6-4 6 4v12M9 20v-6h6v6M9 11h.01M15 11h.01"/></svg></div>
+        Storage <span class="dash-refresh" id="dashStorageRefresh"></span>
+      </div>
+      <div class="card-sub">Voces clonadas y audios temporales.</div>
+      <div class="stat-row"><span class="k">Voces</span><span class="v" id="dashVoiceFiles">—</span></div>
+      <div class="stat-row"><span class="k">Temporales</span><span class="v" id="dashTempFiles">—</span></div>
+    </section>
+  </div>
+
   <!-- Prueba rápida -->
   <section class="hero">
     <div class="hero-title">
@@ -272,26 +332,27 @@ footer a:hover { text-decoration:underline; }
   <div class="grid2">
     <!-- Modelo -->
     <section class="card">
-      <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>Modelo</div>
-      <div class="card-sub">Selecciona el modelo a cargar en memoria.</div>
+      <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>Modelo <span class="dash-refresh" id="modelRefresh" title="Última actualización"></span></div>
+      <div class="card-sub">Modelos locales: carga el que quieras usar, activa uno ya en memoria o descárgalo para liberar VRAM.</div>
       <div class="status" id="modelStatus">Cargando...</div>
-      <div class="row" style="margin-top:12px">
-        <select id="modelSelect" style="flex:1; min-width:230px"></select>
-        <button class="btn-primary" onclick="loadModel()">Cargar</button>
-        <button class="btn-danger" onclick="unloadModel()">Descargar</button>
-      </div>
-      <div class="hint">Al cargar otro modelo o descargar, se libera la VRAM.</div>
+      <table style="margin-top:12px">
+        <thead><tr><th>Model</th><th>Type</th><th>Status</th><th>Device</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody id="modelBody"><tr><td colspan="5" class="status">Cargando...</td></tr></tbody>
+      </table>
     </section>
 
     <!-- Voz -->
     <section class="card">
-      <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM3 22a9 9 0 0 1 18 0h-2a7 7 0 0 0-14 0H3z"/></svg></div>Voz <span style="font-weight:400;color:var(--dim);font-size:12px">· voice cloning</span></div>
-      <div class="card-sub">Clona una voz existente o crea una nueva.</div>
+      <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM3 22a9 9 0 0 1 18 0h-2a7 7 0 0 0-14 0H3z"/></svg></div>Voces <span style="font-weight:400;color:var(--dim);font-size:12px">· voice cloning</span></div>
+      <div class="card-sub">Crea, escucha, renombra o elimina voces clonadas.</div>
       <div class="status" id="voiceStatus">Cargando...</div>
+      <table style="margin-top:12px">
+        <thead><tr><th>Voz</th><th>Idioma</th><th>Descripción</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody id="voiceBody"><tr><td colspan="4" class="status">Cargando...</td></tr></tbody>
+      </table>
       <div class="row" style="margin-top:12px">
-        <select id="voiceSelect" style="flex:1; min-width:230px"></select>
-        <button class="btn-primary" onclick="loadVoice()">Clonar</button>
-        <button class="btn-danger" onclick="unloadVoice()">Desactivar</button>
+        <button class="btn-danger btn-sm" onclick="unloadVoice()" title="Desactivar voice cloning sin eliminar la voz">Desactivar clonado</button>
+        <audio id="voicePreview" controls preload="none" style="display:none; flex:1; min-width:200px"></audio>
       </div>
 
       <div class="divider"></div>
@@ -300,19 +361,27 @@ footer a:hover { text-decoration:underline; }
         <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
         Crear nueva voz
       </div>
-      <p class="hint" style="margin-bottom:4px">Sube un WAV de referencia con su transcripción. Se guardará en <code>voices/&lt;nombre&gt;/</code> y se clonará automáticamente.</p>
+      <p class="hint" style="margin-bottom:4px">Sube un audio de referencia con su transcripción. Se guardará en <code>voices/&lt;id&gt;/</code> y se clonará automáticamente.</p>
       <div class="grid2">
         <div>
-          <label for="newVoiceName" style="margin-top:10px">Nombre de la voz</label>
+          <label for="newVoiceName" style="margin-top:10px">Nombre</label>
           <input type="text" id="newVoiceName" placeholder="ej: maria">
         </div>
         <div>
-          <label for="newVoiceFile" style="margin-top:10px">Archivo de audio (WAV)</label>
-          <input type="file" id="newVoiceFile" accept=".wav,audio/wav">
+          <label for="newVoiceLang" style="margin-top:10px">Idioma</label>
+          <input type="text" id="newVoiceLang" list="voiceLangs" placeholder="ej: spanish">
+          <datalist id="voiceLangs">
+            <option value="spanish"><option value="english"><option value="french"><option value="german"><option value="italian"><option value="portuguese"><option value="japanese"><option value="korean"><option value="chinese"><option value="russian"><option value="arabic"><option value="auto">
+          </datalist>
         </div>
       </div>
+      <label for="newVoiceFile" style="margin-top:10px">Archivo de audio (wav, mp3, flac, ogg, m4a)</label>
+      <input type="file" id="newVoiceFile" accept="audio/*">
+      <div class="hint" id="newVoiceInfo"></div>
       <label for="newVoiceText">Transcripción del audio</label>
       <textarea id="newVoiceText" placeholder="Texto hablado en el audio de referencia..."></textarea>
+      <label for="newVoiceDescription">Descripción (opcional)</label>
+      <input type="text" id="newVoiceDescription" placeholder="ej: voz de mujer joven, tono cálido">
       <div class="row" style="margin-top:10px">
         <button class="btn-primary" onclick="createVoice()">Subir y clonar</button>
         <span id="newVoiceStatus" class="status"></span>
@@ -614,7 +683,8 @@ footer a:hover { text-decoration:underline; }
 
 <script>
 const $ = (id) => document.getElementById(id);
-let apiKey = localStorage.getItem('tts_apikey') || '';
+let apiKey = sessionStorage.getItem('tts_apikey') || '';
+let activeModelId = null;
 
 function toast(msg, ok = true) {
   const t = $('toast');
@@ -662,54 +732,135 @@ async function loadStatus() {
 /* ---------- Modelo ---------- */
 async function loadModels() {
   try {
-    const d = await apiJson('/models');
-    const sel = $('modelSelect');
-    sel.innerHTML = '';
-    for (const m of d.available_models) {
-      const o = document.createElement('option');
-      o.value = m; o.textContent = m;
-      if (m === d.current_model) o.selected = true;
-      sel.appendChild(o);
+    const d = await apiJson('/models/status');
+    const tb = $('modelBody');
+    const active = d.models.find(m => m.active);
+    activeModelId = active ? active.model : null;
+    $('modelStatus').innerHTML = 'Modelo activo: <b>' + (active ? active.model : 'ninguno') + '</b> · ' + d.models.length + ' modelos locales';
+    $('modelRefresh').textContent = new Date().toLocaleTimeString();
+    tb.innerHTML = '';
+    for (const m of d.models) {
+      const tr = document.createElement('tr');
+      const st = (m.state || 'unloaded').toLowerCase();
+      const ok = st === 'ready';
+      const busy = st === 'loading' || st === 'unloading';
+
+      let statusBadge = '<span class="badge off">' + st + '</span>';
+      if (ok) statusBadge = '<span class="badge ok">' + st + '</span>';
+      if (m.error) statusBadge = '<span class="badge" style="color:var(--err);border-color:rgba(248,113,113,.4)">error</span>';
+
+      let actions = '—';
+      const btns = [];
+      if (m.active) btns.push('<span class="badge ok">activo</span>');
+      if (ok && !m.active) btns.push('<button class="btn-sm" onclick="actModel(\'' + m.model + '\')">Activar</button>');
+      if (!ok && !busy) btns.push('<button class="btn-sm btn-primary" onclick="loadModel(\'' + m.model + '\')">Cargar</button>');
+      if (ok || m.error) btns.push('<button class="btn-sm btn-danger" onclick="unloadModel(\'' + m.model + '\')">Descargar</button>');
+      if (btns.length) actions = btns.join(' ');
+
+      tr.innerHTML =
+        '<td style="font-family:ui-monospace,Consolas,monospace; font-size:12px">' + m.model + '</td>' +
+        '<td class="status">' + (m.type || '—') + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td class="status">' + (m.device || '—') + '</td>' +
+        '<td style="text-align:right; white-space:nowrap">' + actions + '</td>';
+      if (m.error) tr.title = m.error;
+      tb.appendChild(tr);
     }
-    $('modelStatus').innerHTML = 'Modelo actual: <b>' + (d.current_model || 'ninguno') + '</b>';
   } catch (e) { $('modelStatus').textContent = 'Error: ' + e.message; }
 }
 
-async function loadModel() {
+async function loadModel(id) {
   try {
-    const d = await apiJson('/model/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: $('modelSelect').value }) });
+    const d = await apiJson('/model/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: id }) });
     toast('Modelo cargado: ' + d.loaded_model);
-    loadModels(); loadStatus();
+    loadModels(); loadStatus(); loadDashboard();
   } catch (e) { toast('Error: ' + e.message, false); }
 }
 
-async function unloadModel() {
+async function actModel(id) {
   try {
-    const d = await apiJson('/model/unload', { method: 'POST' });
-    toast(d.message || 'Modelo descargado');
-    loadModels(); loadStatus();
+    const d = await apiJson('/model/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: id }) });
+    toast(d.message || 'Modelo activado');
+    loadModels(); loadStatus(); loadDashboard();
   } catch (e) { toast('Error: ' + e.message, false); }
 }
 
-/* ---------- Voz ---------- */
+async function unloadModel(id) {
+  if (id === activeModelId) {
+    if (!confirm('¿Descargar el modelo activo "' + id + '"?\nEl TTS no podrá generar audio hasta cargar otro modelo.')) return;
+  } else if (!confirm('¿Descargar el modelo "' + id + '" y liberar su VRAM?')) {
+    return;
+  }
+  try {
+    const d = await apiJson('/model/unload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: id }) });
+    toast(d.message || 'Modelo descargado');
+    loadModels(); loadStatus(); loadDashboard();
+  } catch (e) { toast('Error: ' + e.message, false); }
+}
+
+/* ---------- Voces ---------- */
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function jsq(s) { return String(s).replace(/'/g, "\\'"); }
+
 async function loadVoices() {
   try {
     const d = await apiJson('/voices');
-    const sel = $('voiceSelect');
-    sel.innerHTML = '';
-    for (const v of d.available_voices) {
-      const o = document.createElement('option');
-      o.value = v; o.textContent = v;
-      sel.appendChild(o);
+    const tb = $('voiceBody');
+    const activeId = d.clone_voice_id || null;
+    $('voiceStatus').innerHTML = 'Voz clonada activa: <b>' + (d.clone_active ? 'sí' : 'no') + '</b> · ' + (d.available_voices || []).length + ' voces';
+    tb.innerHTML = '';
+    for (const v of d.voices_detail || []) {
+      const tr = document.createElement('tr');
+      let actions = '<button class="btn-sm" title="Escuchar audio de referencia" onclick="previewVoice(\'' + jsq(v.id) + '\')">Preview</button> ';
+      if (d.clone_active && v.id === activeId) {
+        actions += '<span class="badge ok">activa</span>';
+      } else if (v.valid) {
+        actions += '<button class="btn-sm btn-primary" onclick="loadVoice(\'' + jsq(v.id) + '\')">Clonar</button> ';
+      }
+      actions += '<button class="btn-sm" onclick="renameVoice(\'' + jsq(v.id) + '\', \'' + jsq(v.name || '') + '\')">Renombrar</button> ';
+      actions += '<button class="btn-sm btn-danger" onclick="deleteVoice(\'' + jsq(v.id) + '\', \'' + jsq(v.name || '') + '\')">Eliminar</button>';
+      tr.innerHTML =
+        '<td><b>' + esc(v.name || v.id) + '</b><div class="hint" style="margin-top:2px">' + esc(v.id) + '</div></td>' +
+        '<td class="status">' + esc(v.language || '—') + '</td>' +
+        '<td class="status">' + esc(v.description || '—') + '</td>' +
+        '<td style="text-align:right; white-space:nowrap">' + actions + '</td>';
+      tb.appendChild(tr);
     }
-    $('voiceStatus').innerHTML = 'Voz clonada activa: <b>' + (d.clone_active ? 'sí' : 'no') + '</b>';
   } catch (e) { $('voiceStatus').textContent = 'Error: ' + e.message; }
 }
 
-async function loadVoice() {
+function previewVoice(id) {
+  const au = $('voicePreview');
+  au.src = '/voices/' + encodeURIComponent(id) + '/audio';
+  au.style.display = 'block';
+  au.play();
+}
+
+async function loadVoice(id) {
   try {
-    const d = await apiJson('/voice/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice_name: $('voiceSelect').value }) });
+    const d = await apiJson('/voice/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice_name: id }) });
     toast(d.message || 'Voz clonada');
+    loadVoices(); loadStatus();
+  } catch (e) { toast('Error: ' + e.message, false); }
+}
+
+async function renameVoice(id, current) {
+  const name = prompt('Nuevo nombre para la voz (actual: "' + current + '"):', current);
+  if (!name || name.trim() === current) return;
+  const fd = new FormData();
+  fd.append('name', name.trim());
+  try {
+    const d = await apiJson('/voices/' + encodeURIComponent(id), { method: 'PATCH', body: fd });
+    toast('Voz renombrada a "' + (d.voice.name || name.trim()) + '"');
+    loadVoices();
+  } catch (e) { toast('Error: ' + e.message, false); }
+}
+
+async function deleteVoice(id, name) {
+  if (!confirm('¿Eliminar la voz "' + name + '" (' + id + ')?\nSe borrará su directorio completo.')) return;
+  try {
+    const d = await apiJson('/voices/' + encodeURIComponent(id), { method: 'DELETE' });
+    toast(d.message || 'Voz eliminada');
     loadVoices(); loadStatus();
   } catch (e) { toast('Error: ' + e.message, false); }
 }
@@ -722,18 +873,43 @@ async function unloadVoice() {
   } catch (e) { toast('Error: ' + e.message, false); }
 }
 
+/* Información del archivo seleccionado (tamaño y duración) ANTES de guardar */
+async function fileInfo() {
+  const file = $('newVoiceFile').files[0];
+  const info = $('newVoiceInfo');
+  if (!file) { info.textContent = ''; return; }
+  let size = '';
+  if (file.size >= 1024 * 1024) size = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+  else if (file.size >= 1024) size = (file.size / 1024).toFixed(0) + ' KB';
+  else size = file.size + ' B';
+  let dur = '?';
+  try {
+    const url = URL.createObjectURL(file);
+    const au = new Audio();
+    dur = await new Promise((res) => {
+      au.onloadedmetadata = () => res(isFinite(au.duration) ? au.duration.toFixed(1) + ' s' : '?');
+      au.onerror = () => res('?');
+      au.src = url;
+    });
+    URL.revokeObjectURL(url);
+  } catch (e) { dur = '?'; }
+  info.textContent = 'Tamaño: ' + size + ' · Duración estimada: ' + dur;
+}
+
 async function createVoice() {
   const name = $('newVoiceName').value.trim();
   const file = $('newVoiceFile').files[0];
   const text = $('newVoiceText').value.trim();
   if (!name) { toast('Indica un nombre para la voz', false); return; }
-  if (!file) { toast('Selecciona un archivo WAV', false); return; }
+  if (!file) { toast('Selecciona un archivo de audio', false); return; }
   if (!text) { toast('Escribe la transcripción del audio', false); return; }
 
   const fd = new FormData();
   fd.append('voice_name', name);
   fd.append('text', text);
   fd.append('audio', file);
+  if ($('newVoiceLang').value.trim()) fd.append('language', $('newVoiceLang').value.trim());
+  if ($('newVoiceDescription').value.trim()) fd.append('description', $('newVoiceDescription').value.trim());
 
   const btn = $('newVoiceStatus').previousElementSibling;
   btn.disabled = true; btn.textContent = 'Subiendo y clonando...';
@@ -743,13 +919,65 @@ async function createVoice() {
     toast(d.message || 'Voz creada y clonada');
     $('newVoiceName').value = '';
     $('newVoiceFile').value = '';
+    $('newVoiceLang').value = '';
+    $('newVoiceDescription').value = '';
     $('newVoiceText').value = '';
+    $('newVoiceInfo').textContent = '';
     await loadVoices(); await loadStatus();
-    const sel = $('voiceSelect');
-    for (const o of sel.options) if (o.value === name) o.selected = true;
   } catch (e) { toast('Error: ' + e.message, false); }
   finally { btn.disabled = false; btn.textContent = 'Subir y clonar'; }
 }
+
+/* ---------- Dashboard ---------- */
+function mb(n) { return n >= 1024 ? (n / 1024).toFixed(2) + ' GB' : Math.round(n) + ' MB'; }
+function fmtFiles(c) {
+  if (!c || !c.exists) return '—';
+  return c.files + ' archivo' + (c.files === 1 ? '' : 's') + ' · ' + mb(c.size_mb * 1024);
+}
+
+async function loadDashboard() {
+  try {
+    const s = await apiJson('/system/status');
+
+    // GPU
+    const g = s.gpu || {};
+    $('dashGpuRefresh').textContent = new Date().toLocaleTimeString();
+    if (g.available) {
+      $('dashGpuName').textContent = g.name || '—';
+      $('dashVramTotal').textContent = mb(g.total_vram_mb);
+      $('dashVramUsed').textContent = mb(g.used_vram_mb);
+      $('dashVramFree').textContent = mb(g.free_vram_mb);
+      const pct = g.total_vram_mb > 0 ? Math.round((g.used_vram_mb / g.total_vram_mb) * 100) : 0;
+      $('dashVramBar').style.width = Math.min(100, pct) + '%';
+    } else {
+      $('dashGpuName').textContent = 'No disponible';
+      $('dashVramTotal').textContent = '—'; $('dashVramUsed').textContent = '—'; $('dashVramFree').textContent = '—';
+      $('dashVramBar').style.width = '0%';
+    }
+
+    // TTS
+    const t = s.tts || {};
+    $('dashTtsModel').textContent = t.model || 'ninguno';
+    const ttsOk = t.state === 'READY';
+    $('dashTtsState').innerHTML = '<span class="badge ' + (ttsOk ? 'ok' : 'off') + '">' + (t.state || 'unknown') + '</span>';
+    $('dashTtsReq').textContent = (t.active_requests || 0) + ' (' + (t.running || 0) + ' en curso · ' + (t.waiting || 0) + ' en cola)';
+
+    // Whisper
+    const w = s.whisper || {};
+    $('dashWhisperModel').textContent = w.model || '—';
+    $('dashWhisperState').innerHTML = '<span class="badge ' + (w.model_loaded ? 'ok' : 'off') + '">' + (w.state || 'unloaded') + '</span>';
+
+    // Storage
+    const st = s.storage || {};
+    const v = st.voices || {};
+    const tmp = st.temporaries || {};
+    $('dashVoiceFiles').textContent = fmtFiles(v);
+    $('dashTempFiles').textContent = fmtFiles(tmp);
+  } catch (e) {
+    clearInterval(window._dashTimer);
+  }
+}
+window._dashTimer = setInterval(loadDashboard, 5000);
 
 /* ---------- Prueba TTS ---------- */
 async function testTTS() {
@@ -946,7 +1174,7 @@ async function createKey() {
     box.style.display = 'block';
     box.innerHTML = ' Clave creada (solo se muestra una vez). Cópiala ahora:<br>' + d.key +
       ' <button class="btn-sm" onclick="navigator.clipboard.writeText(\'' + d.key + '\'); toast(\'Copiada\')">Copiar</button>';
-    apiKey = d.key; localStorage.setItem('tts_apikey', d.key);
+    apiKey = d.key; sessionStorage.setItem('tts_apikey', d.key);
     $('activeKey').value = d.key;
     $('newKeyName').value = '';
     loadKeys();
@@ -1005,16 +1233,23 @@ async function unloadWhisper() {
   } catch (e) { toast('Error: ' + e.message, false); }
 }
 
-/* ---------- Clave activa (localStorage) ---------- */
+/* ---------- Clave activa (temporal, solo en esta pestaña) ---------- */
+/* La clave se guarda únicamente en sessionStorage: no persiste al cerrar el
+   navegador ni queda en localStorage. Elimina cualquier clave que hubiera
+   quedado persistida por versiones anteriores. */
+localStorage.removeItem('tts_apikey');
 $('activeKey').addEventListener('change', (e) => {
   apiKey = e.target.value.trim();
-  localStorage.setItem('tts_apikey', apiKey);
+  sessionStorage.setItem('tts_apikey', apiKey);
 });
 
+$('newVoiceFile').addEventListener('change', fileInfo);
+
 /* ---------- Init ---------- */
-function refreshAll() { loadStatus(); loadModels(); loadVoices(); loadWhisperStatus(); }
+function refreshAll() { loadStatus(); loadModels(); loadVoices(); loadWhisperStatus(); loadDashboard(); }
 refreshAll();
 setInterval(loadStatus, 10000);
+setInterval(loadModels, 5000);
 </script>
 </body>
 </html>

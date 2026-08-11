@@ -292,3 +292,65 @@ def test_queue_disabled_never_429():
         assert done == [1, 2]
 
     asyncio.run(scenario())
+
+
+def test_active_requests_with_queue():
+    """active_requests = en ejecución + en espera (cola FIFO)."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=4)
+        q.start()
+        release = asyncio.Event()
+        done = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                done.append(i)
+                if i == 1:
+                    await release.wait()
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)   # t1 en ejecución
+        t2 = asyncio.create_task(inference(2))
+        await asyncio.sleep(0.05)   # t2 en espera
+
+        assert q.running == 1
+        assert q.queue_size == 1
+        assert q.active_requests == 2
+
+        release.set()
+        await asyncio.gather(t1, t2)
+        assert q.running == 0
+        assert q.queue_size == 0
+        assert q.active_requests == 0
+        await q.stop()
+
+    asyncio.run(scenario())
+
+
+def test_active_requests_without_queue():
+    """Sin cola, lo en espera del semáforo cuenta como en ejecución."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=False, max_size=4)
+        release = asyncio.Event()
+        done = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                done.append(i)
+                if i == 1:
+                    await release.wait()
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)
+        t2 = asyncio.create_task(inference(2))
+        await asyncio.sleep(0.05)
+
+        assert q.running == 1
+        assert q.queue_size == 0
+        assert q.active_requests == 1
+
+        release.set()
+        await asyncio.gather(t1, t2)
+        assert q.active_requests == 0
+
+    asyncio.run(scenario())

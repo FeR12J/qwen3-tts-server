@@ -6,6 +6,7 @@
 
 import importlib.metadata
 import logging
+import os
 
 import torch
 
@@ -61,6 +62,26 @@ def _gpu_status() -> dict:
         }
 
 
+def _storage_status(path: str) -> dict:
+    """Contenido de un directorio: nº de archivos y tamaño total (MB)."""
+    try:
+        if not os.path.isdir(path):
+            return {"path": path, "exists": False, "files": 0, "size_mb": 0.0}
+        files = 0
+        size = 0
+        for root, dirs, names in os.walk(path):
+            for name in names:
+                try:
+                    size += os.path.getsize(os.path.join(root, name))
+                    files += 1
+                except OSError:
+                    continue
+        return {"path": path, "exists": True, "files": files, "size_mb": round(size / (1024 * 1024), 2)}
+    except Exception as e:
+        logger.debug(f"No se pudo leer el estado de {path}: {e}")
+        return {"path": path, "exists": False, "files": 0, "size_mb": 0.0}
+
+
 def create_system_routes(app: FastAPI, ctx):
     """Rutas de estado y salud del servidor."""
 
@@ -83,14 +104,25 @@ def create_system_routes(app: FastAPI, ctx):
     @app.get("/system/status")
     async def system_status():
         tts = await ctx.models.get_model_status()
+        whisper = whisper_service.status()
         return {
             "gpu": _gpu_status(),
             "tts": {
                 "state": tts["state"],
                 "model": tts["model_id"],
+                "running": ctx.queue.running,
+                "waiting": ctx.queue.queue_size,
+                "active_requests": ctx.queue.active_requests,
             },
             "whisper": {
-                "state": "loaded" if whisper_service.is_loaded() else "unloaded",
+                "model": whisper["model"],
+                "model_loaded": whisper["model_loaded"],
+                "state": "loaded" if whisper["model_loaded"] else "unloaded",
+                "device": whisper["device"],
+            },
+            "storage": {
+                "voices": _storage_status(settings.paths.voices_dir),
+                "temporaries": _storage_status(settings.paths.audios_dir),
             },
         }
 

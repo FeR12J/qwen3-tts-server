@@ -61,7 +61,7 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
   <tbody>
     <tr><td><span class="method m-get">GET</span></td><td><code>/health</code></td><td>Estado del servidor (rápido, no carga modelos)</td><td>No</td>
     <tr><td><span class="method m-get">GET</span></td><td><code>/ready</code></td><td>Listo para servir: <code>{ "ready": true, "tts_model_loaded": true }</code></td><td>No</td>
-    <tr><td><span class="method m-get">GET</span></td><td><code>/system/status</code></td><td>Estado detallado: GPU (VRAM en MB), estado del modelo TTS y de Whisper</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/system/status</code></td><td>Estado detallado: GPU (nombre, VRAM total/usada/libre en MB), TTS (modelo, estado, requests activas), Whisper (modelo, estado) y Storage (voces, temporales)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/version</code></td><td>Versión del servidor y de las librerías (<code>qwen-tts</code>, <code>torch</code>, <code>transformers</code>, <code>cuda</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/</code></td><td>Estado del servidor (modelo actual, voice cloning, VRAM)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts</code></td><td>Generar audio WAV (texto, language, speaker, instruct)</td><td>Sí</td></tr>
@@ -69,8 +69,10 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/play</code></td><td>Generar y reproducir el audio en el equipo del servidor</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/tts/audio/speech</code></td><td>Generar audio compatible con OpenWebUI (text o input)</td><td>Sí</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/model/load</code></td><td>Cargar un modelo local <code>{ "model_id": "..." }</code></td><td>Admin</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar el modelo actual y liberar VRAM</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/model/activate</code></td><td>Activar un modelo ya cargado en memoria (sin recargar ni resetear la voz clonada)</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar un modelo y liberar VRAM. Sin cuerpo: descarga el activo; con <code>{ "model_id": "..." }</code>: el indicado</td><td>Admin</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/models</code></td><td>Listar modelos disponibles (alias <code>/tts/audio/models</code>)</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/models/status</code></td><td>Estado por modelo: model, type, state, device, active (alias <code>/tts/audio/models/status</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz: multipart <code>audio</code> + <code>text</code> + <code>voice_name</code>, opc. <code>language</code>, <code>description</code>. Id generado por el servidor</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Admin</td></tr>

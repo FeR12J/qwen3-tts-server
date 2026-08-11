@@ -59,11 +59,21 @@ class DummyMetrics:
         }
 
 
+class DummyQueue:
+    running = 2
+    queue_size = 1
+
+    @property
+    def active_requests(self):
+        return self.running + self.queue_size
+
+
 class Ctx:
     def __init__(self, models):
         self.models = models
         self.voices = DummyVoices()
         self.metrics = DummyMetrics()
+        self.queue = DummyQueue()
 
 
 @pytest.fixture
@@ -96,14 +106,21 @@ def test_system_status_shape(client):
     res = client.get("/system/status")
     assert res.status_code == 200
     data = res.json()
-    assert set(data.keys()) == {"gpu", "tts", "whisper"}
+    assert set(data.keys()) == {"gpu", "tts", "whisper", "storage"}
     assert set(data["gpu"].keys()) == {
         "available", "name", "total_vram_mb", "used_vram_mb", "free_vram_mb",
     }
-    assert set(data["tts"].keys()) == {"state", "model"}
+    assert set(data["tts"].keys()) == {
+        "state", "model", "running", "waiting", "active_requests",
+    }
     assert data["tts"]["state"] == "ready"
-    assert set(data["whisper"].keys()) == {"state"}
+    assert data["tts"]["running"] == 2
+    assert data["tts"]["waiting"] == 1
+    assert data["tts"]["active_requests"] == 3
+    assert set(data["whisper"].keys()) == {"model", "model_loaded", "state", "device"}
     assert data["whisper"]["state"] in ("loaded", "unloaded")
+    for key in ("voices", "temporaries"):
+        assert set(data["storage"][key].keys()) == {"path", "exists", "files", "size_mb"}
 
 
 def test_version_shape(client):

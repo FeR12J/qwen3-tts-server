@@ -89,6 +89,7 @@ class QueueService:
         self._workers_started = False
         self._stopping = False
         self._worker_tasks = []
+        self._running = 0
 
     # -- Cola interna ------------------------------------------------------
 
@@ -98,6 +99,16 @@ class QueueService:
         if self._queue is None:
             return 0
         return self._queue.qsize()
+
+    @property
+    def running(self) -> int:
+        """Inferencias en curso (generación/transcripción/clonación)."""
+        return self._running
+
+    @property
+    def active_requests(self) -> int:
+        """Peticiones activas: en espera en la cola + en ejecución."""
+        return self._running + self.queue_size
 
     def start(self):
         """Arrancar los workers de la cola (llamado en el inicio del servidor).
@@ -166,7 +177,11 @@ class QueueService:
         """
         if self._queue is None:
             async with self._inference_semaphore:
-                yield
+                self._running += 1
+                try:
+                    yield
+                finally:
+                    self._running -= 1
             return
 
         self.start()  # arranque perezoso del worker
@@ -187,7 +202,11 @@ class QueueService:
         try:
             await token.wait_granted()
             async with self._inference_semaphore:
-                yield
+                self._running += 1
+                try:
+                    yield
+                finally:
+                    self._running -= 1
         finally:
             # Liberar al worker aunque la petición se cancele o falle
             token.finish()

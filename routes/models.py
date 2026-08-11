@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from config.settings import settings
 from security.auth import require_admin
 from security.validation import validate_model_id
-from services.errors import APIError, ModelLoadingError
+from services.errors import APIError, ModelLoadingError, ModelNotLoadedError
 from services.gpu_management import prepare_for_tts
 from services import whisper_service
 from schemas.models import LoadModelRequest
@@ -54,21 +54,58 @@ def create_models_routes(app: FastAPI, ctx):
                 raise ModelLoadingError(f"Error cargando modelo: {str(e)}")
 
     @app.post("/model/unload", dependencies=[Depends(require_admin)])
-    async def unload_model_endpoint():
+    async def unload_model_endpoint(req_body: LoadModelRequest | None = None):
+        model_id = req_body.model_id.strip() if req_body is not None else None
         async with ctx.queue.model_lock():
-            info = await ctx.models.get_active_model()
-            if info is None:
-                return {"status": "ok", "message": "No hay modelo cargado"}
+            if model_id is None:
+                info = await ctx.models.get_active_model()
+                if info is None:
+                    return {"status": "ok", "message": "No hay modelo cargado"}
+                model_id = info.model_id
+            else:
+                validate_model_id(model_id)
+                if not ctx.models.is_loaded_model(model_id):
+                    return {"status": "ok", "message": f"El modelo '{model_id}' no estaba cargado"}
 
-            await ctx.models.unload_model(info.model_id)
-            ctx.voices.unload_voice()
+            active = await ctx.models.get_active_model()
+            was_active = active is not None and active.model_id == model_id
 
-            logger.info(f"Modelo descargado: {info.model_id}")
+            await ctx.models.unload_model(model_id)
+            if was_active:
+                ctx.voices.unload_voice()
+
+            logger.info(f"Modelo descargado: {model_id}")
             return {
                 "status": "ok",
-                "unloaded_model": info.model_id,
-                "message": f"Modelo '{info.model_id}' descargado y VRAM liberada",
+                "unloaded_model": model_id,
+                "message": f"Modelo '{model_id}' descargado y VRAM liberada",
             }
+
+    @app.post("/model/activate", dependencies=[Depends(require_admin)])
+    async def activate_model_endpoint(req_body: LoadModelRequest):
+        """Activar un modelo ya cargado en memoria (sin recargar ni resetear
+        la voz clonada). Solo disponible si el modelo está READY."""
+        model_id = req_body.model_id.strip()
+        validate_model_id(model_id)
+        async with ctx.queue.model_lock():
+            if not ctx.models.is_loaded_model(model_id):
+                raise ModelNotLoadedError(
+                    f"El modelo '{model_id}' no está cargado en memoria: usa /model/load"
+                )
+            info = await ctx.models.switch_model(model_id)
+            logger.info(f"Modelo activado: {info.model_id}")
+            return {
+                "status": "ok",
+                "loaded_model": info.model_id,
+                "model_type": info.model_type,
+                "message": f"Modelo '{info.model_id}' activado",
+            }
+
+    @app.get("/models/status")
+    @app.get("/tts/audio/models/status")
+    async def models_status():
+        """Estado de cada modelo local (para la tabla de gestión del panel)."""
+        return {"models": ctx.models.list_models_status()}
 
     @app.get("/model/status")
     async def model_status():

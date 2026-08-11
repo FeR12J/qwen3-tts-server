@@ -55,6 +55,11 @@ class DummyVoices:
     def get(self, voice_id):
         return {"id": voice_id, "name": "TestVoz"}
 
+    def get_reference(self, voice_id):
+        if voice_id != "voice_abc123":
+            return None
+        return ("/tmp/ref.wav", "/tmp/ref.txt")
+
 
 @pytest.fixture
 def env(monkeypatch):
@@ -128,3 +133,31 @@ def test_create_voice_valid_audio_reaches_critical_section(env):
     assert queue.lock_entered is True
     assert calls["prepare_for_tts"] == 1
     assert calls["require_model_loaded"] == 1
+
+
+def test_voice_preview_audio(env):
+    """GET /voices/{id}/audio devuelve el audio de referencia (preview)."""
+    import shutil
+    import struct
+    import tempfile
+    import wave
+
+    client, queue, calls = env
+    fd, tmp = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    with wave.open(tmp, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(struct.pack("<h", 0) * 1600)
+    shutil.copy(tmp, "/tmp/ref.wav")
+    try:
+        resp = client.get("/voices/voice_abc123/audio")
+        assert resp.status_code == 200
+        assert len(resp.content) > 0
+        assert resp.headers["content-type"] == "audio/wav"
+        resp2 = client.get("/voices/otra/audio")
+        assert resp2.status_code == 404
+    finally:
+        os.unlink("/tmp/ref.wav")
+        os.unlink(tmp)

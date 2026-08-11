@@ -184,6 +184,58 @@ class ModelManager:
         """IDs de los modelos actualmente en el registro (cargados o no)."""
         return list(self._registry.keys())
 
+    def is_loaded_model(self, model_id: str) -> bool:
+        """¿Está un modelo concreto READY en memoria (activo o no)?"""
+        entry = self._registry.get(model_id)
+        return entry is not None and entry["state"] == ModelState.READY.value
+
+    def list_models_status(self) -> list:
+        """Estado por modelo local (para el panel de gestión).
+
+        Cada fila: model, type, state, device, dtype, loaded_at, error,
+        active. Los modelos del registro que ya no están en disco también
+        se incluyen (conservan su estado de carga).
+        """
+        local = set(self.list_local_models())
+        rows = []
+        for mid in sorted(local):
+            entry = self._registry.get(mid)
+            if entry is None:
+                rows.append({
+                    "model": mid,
+                    "type": None,
+                    "state": ModelState.UNLOADED.value,
+                    "device": None,
+                    "dtype": None,
+                    "loaded_at": None,
+                    "error": None,
+                    "active": False,
+                })
+            else:
+                rows.append({
+                    "model": mid,
+                    "type": entry.get("type"),
+                    "state": entry["state"],
+                    "device": entry.get("device"),
+                    "dtype": entry.get("dtype"),
+                    "loaded_at": entry.get("loaded_at"),
+                    "error": entry.get("error"),
+                    "active": mid == self._active_id,
+                })
+        for mid in sorted(set(self._registry) - local):
+            entry = self._registry[mid]
+            rows.append({
+                "model": mid,
+                "type": entry.get("type"),
+                "state": entry["state"],
+                "device": entry.get("device"),
+                "dtype": entry.get("dtype"),
+                "loaded_at": entry.get("loaded_at"),
+                "error": entry.get("error"),
+                "active": mid == self._active_id,
+            })
+        return rows
+
     # -- Ciclo de vida -----------------------------------------------------
 
     async def load_model(self, model_id: str) -> ModelInfo:
