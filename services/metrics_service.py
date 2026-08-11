@@ -8,6 +8,7 @@ from fastapi import Request
 
 from utils.logging import log_request as _log_request
 from utils.gpu import get_vram_available
+from services.config_service import get_runtime_config
 
 logger = logging.getLogger("tts")
 
@@ -22,7 +23,12 @@ class MetricsService:
         self._last_request = None
 
     def log_request(self, req: Request, text: str):
-        """Registrar una petición (contador + archivo de logs)."""
+        """Registrar una petición (contador + archivo de logs).
+
+        Privacidad por defecto: solo se registra text_length, no el texto
+        (log_input_text desactivado). El texto completo solo se registra si
+        la configuración en tiempo de ejecución lo permite.
+        """
         self._request_count += 1
         self._last_request = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if self._config.logging.log_file:
@@ -31,6 +37,7 @@ class MetricsService:
                 text,
                 self._config.logging.log_file,
                 self._config.logging.log_max_bytes,
+                get_runtime_config().get("log_input_text", False),
             )
 
     def vram_available_gb(self) -> float:

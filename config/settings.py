@@ -203,6 +203,10 @@ class RuntimeSettings(BaseModel):
     )
     log_level: str = "INFO"
     log_requests: bool = True
+    # Privacidad: por defecto NO se registra el texto enviado al TTS, solo
+    # su longitud (text_length). Activar log_input_text para registrar el
+    # texto completo (truncado) en requests.log.
+    log_input_text: bool = False
     api_keys_enabled: bool = False
     # Endpoint /tts/stream habilitado (chunked streaming por frases)
     streaming_enabled: bool = True

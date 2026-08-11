@@ -10,6 +10,7 @@ nunca manipula la instancia del modelo directamente).
 
 import os
 import uuid
+import time
 import logging
 
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from services.audio_service import AudioValidationError
 from services.config_service import get_runtime_config, get_limits
 from services.model_manager import ModelInfo
 from utils.chunker import TextChunker, TextChunkerError
+from utils.logging import log_event
 
 logger = logging.getLogger("tts")
 
@@ -319,9 +321,9 @@ class TTSService:
             wavs, sr = await self._models.generate_custom_voice(**kwargs)
         return wavs, sr
 
-    def _encode(self, request: TTSRequest, wav, sr, http_request=None) -> bytes:
+    def _encode(self, request: TTSRequest, wav, sr, request_id: str = None) -> bytes:
         """Guardar copia y codificar el audio según output_format."""
-        self._audio.save(wav, sr, "tts", request_id=self._request_id(http_request))
+        self._audio.save(wav, sr, "tts", request_id=request_id)
         if request.output_format == "pcm":
             return self._audio.encode_pcm(wav, sr)
         return self._audio.encode_wav(wav, sr)
@@ -349,6 +351,7 @@ class TTSService:
         from services import whisper_service
         from services.gpu_management import prepare_for_tts
 
+        request_id = self._request_id(http_request)
         text = self._require_text(request)
         self._validate_input_limits(request)
         rc = get_runtime_config()
@@ -373,21 +376,41 @@ class TTSService:
                     "No se pudo dividir el texto en fragmentos para generar."
                 )
 
-            if len(chunks) == 1:
-                wavs, sr = await self._generate_one(request, chunks[0], info)
-                wav = wavs[0]
-            else:
-                logger.info(
-                    f"Texto largo: {len(text)} caracteres -> {len(chunks)} fragmentos"
-                )
-                parts = []
-                for i, chunk in enumerate(chunks):
-                    logger.info(f"Generando fragmento {i + 1}/{len(chunks)}")
-                    wavs, sr = await self._generate_one(request, chunk, info)
-                    parts.append(wavs[0])
-                wav = self._concat_wavs(parts)
+            log_event(
+                logger, "tts_started", request_id,
+                model=info.model_id, model_type=info.model_type,
+                text_length=len(text), chunks=len(chunks),
+            )
+            started = time.perf_counter()
+            try:
+                if len(chunks) == 1:
+                    wavs, sr = await self._generate_one(request, chunks[0], info)
+                    wav = wavs[0]
+                else:
+                    logger.info(
+                        f"Texto largo: {len(text)} caracteres -> {len(chunks)} fragmentos"
+                    )
+                    parts = []
+                    for i, chunk in enumerate(chunks):
+                        logger.info(f"Generando fragmento {i + 1}/{len(chunks)}")
+                        wavs, sr = await self._generate_one(request, chunk, info)
+                        parts.append(wavs[0])
+                    wav = self._concat_wavs(parts)
 
-            audio = self._encode(request, wav, sr, http_request=http_request)
+                audio = self._encode(request, wav, sr, request_id=request_id)
+            except Exception:
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                log_event(
+                    logger, "tts_failed", request_id,
+                    model=info.model_id, duration_ms=duration_ms,
+                )
+                raise
+            log_event(
+                logger, "tts_completed", request_id,
+                model=info.model_id,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                audio_duration_ms=int(wav.shape[0] / sr * 1000),
+            )
             logger.info(
                 f"Generación completada (model: {info.model_id}, "
                 f"{info.model_type}, {len(chunks)} fragmento(s))"
@@ -449,36 +472,60 @@ class TTSService:
         from services.gpu_management import prepare_for_tts
 
         rc = get_runtime_config()
+        request_id = self._request_id(http_request)
+        text = (request.text or request.input or "").strip()
 
         async with self._queue.inference_lock():
             await prepare_for_tts(self._models, self._voices, whisper_service)
 
             if rc.get("log_requests", True) and http_request is not None and self._metrics:
-                self._metrics.log_request(
-                    http_request, (request.text or request.input or "")
-                )
+                self._metrics.log_request(http_request, text)
 
+            started = time.perf_counter()
+            audio_ms_total = 0
             for index, sentence in enumerate(plan.sentences):
                 info = await self._models.get_active_model()
                 if info is None or info.model_id != plan.info.model_id:
                     # El modelo cambió mientras se preparaba el stream
                     info = await self._resolve_model(request)
+                if index == 0:
+                    log_event(
+                        logger, "tts_started", request_id,
+                        model=info.model_id, model_type=info.model_type,
+                        text_length=len(text), chunks=len(plan.sentences),
+                        streaming=True,
+                    )
+                chunk_started = time.perf_counter()
                 wavs, sr = await self._generate_one(request, sentence, info)
                 audio = self._audio.encode_pcm(wavs[0], sr)
                 # request_id + chunk_index: nombre único y trazable por
                 # fragmento (el timestamp solo tiene precisión de 1 s).
                 self._audio.save(
                     wavs[0], sr, "tts_stream",
-                    request_id=self._request_id(http_request),
+                    request_id=request_id,
                     chunk_index=index,
                 )
-                logger.info(f"Fragmento emitido ({len(sentence)} chars, model: {info.model_id})")
+                log_event(
+                    logger, "tts_chunk_emitted", request_id,
+                    chunk_index=index + 1, total_chunks=len(plan.sentences),
+                    text_length=len(sentence),
+                    duration_ms=int((time.perf_counter() - chunk_started) * 1000),
+                    audio_duration_ms=int(wavs[0].shape[0] / sr * 1000),
+                )
+                audio_ms_total += int(wavs[0].shape[0] / sr * 1000)
                 yield SynthesisResult(
                     audio=audio,
                     sample_rate=sr,
                     model_id=info.model_id,
                     model_type=info.model_type,
                 )
+            log_event(
+                logger, "tts_completed", request_id,
+                model=plan.info.model_id,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                audio_duration_ms=audio_ms_total,
+                streaming=True,
+            )
 
     async def _resolve_model(self, request: TTSRequest):
         """Modelo activo, o el solicitado en `request.model` (cambiando si procede).

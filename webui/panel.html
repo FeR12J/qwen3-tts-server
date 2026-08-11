@@ -436,6 +436,11 @@ footer a:hover { text-decoration:underline; }
             <select id="cfgLogRequests"><option value="true">Sí</option><option value="false">No</option></select>
           </div>
           <div>
+            <label for="cfgLogInputText">Registrar el texto enviado al TTS</label>
+            <select id="cfgLogInputText"><option value="false">No (privacidad: solo text_length)</option><option value="true">Sí (texto truncado)</option></select>
+            <div class="hint">Desactivado por defecto: solo se registra la longitud del texto, no su contenido.</div>
+          </div>
+          <div>
             <label for="cfgStreaming">Streaming en <code>/tts/stream</code></label>
             <select id="cfgStreaming"><option value="true">Sí</option><option value="false">No</option></select>
           </div>
@@ -796,6 +801,7 @@ async function loadConfig() {
     $('cfgLogLevel').value = c.log_level;
     $('cfgDtype').value = c.dtype || 'auto';
     $('cfgLogRequests').value = String(c.log_requests);
+    $('cfgLogInputText').value = String(c.log_input_text === true);
     $('cfgStreaming').value = String(c.streaming_enabled !== false);
     $('cfgSaveAudios').value = String(c.save_audios !== false);
     $('cfgUnloadTtsForWhisper').value = String(c.unload_tts_for_whisper);
@@ -833,6 +839,7 @@ async function saveConfig() {
     log_level: $('cfgLogLevel').value,
     dtype: $('cfgDtype').value,
     log_requests: $('cfgLogRequests').value === 'true',
+    log_input_text: $('cfgLogInputText').value === 'true',
     streaming_enabled: $('cfgStreaming').value === 'true',
     save_audios: $('cfgSaveAudios').value === 'true',
     unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',

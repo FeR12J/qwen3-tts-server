@@ -166,9 +166,7 @@ async def tts_validation_handler(request: Request, exc: TTSValidationError):
 async def startup_procedure(ctx: AppContext):
     """Procedimiento de inicialización del servidor."""
 
-    print("\n" + "." * 60)
-    print("Iniciando qwen3-tts server")
-    print("." * 60)
+    logger.info("Iniciando qwen3-tts server")
 
     # Limpiar audios generados más antiguos que el TTL configurado
     ctx.audio.cleanup_old(settings.runtime.generated_audio_ttl_hours * 3600)
@@ -176,9 +174,7 @@ async def startup_procedure(ctx: AppContext):
     # Modelos locales
     local_models = ctx.models.list_local_models()
 
-    print(f"\n Modelos locales disponibles ({len(local_models)}):")
-    for i, m in enumerate(local_models, 1):
-        print(f"   {i}. {m}")
+    logger.info(f"Modelos locales disponibles ({len(local_models)}): {local_models}")
 
     # Seleccionar modelo por defecto (configurable, fallback al primero disponible)
     if len(local_models) > 0:
@@ -188,27 +184,30 @@ async def startup_procedure(ctx: AppContext):
         else:
             selected_model = local_models[0]
             if settings.tts.default_model:
-                print(f"\nModelo por defecto '{settings.tts.default_model}' no encontrado, usando '{selected_model}'")
+                logger.warning(
+                    f"Modelo por defecto '{settings.tts.default_model}' no encontrado, "
+                    f"usando '{selected_model}'"
+                )
 
-        print(f"\nModelo seleccionado por defecto: {selected_model}")
+        logger.info(f"Modelo seleccionado por defecto: {selected_model}")
 
         try:
             async with ctx.queue.model_lock():
                 info = await ctx.models.load_model(selected_model)
-            print(f"   Tipo: {info.model_type}")
-            print(f"   VRAM disponible: {get_vram_available()} GB")
+            logger.info(f"Modelo cargado: {info.model_id} ({info.model_type})")
+            logger.info(f"VRAM disponible: {get_vram_available()} GB")
         except Exception as e:
-            print(f"\nError cargando modelo por defecto: {e}")
+            logger.warning(f"Error cargando modelo por defecto: {e}")
     else:
-        print("\nNo hay modelos disponibles. El servidor funcionará sin modelo inicial.")
+        logger.warning("No hay modelos disponibles. El servidor funcionará sin modelo inicial.")
 
     # Voces locales
     local_voices = ctx.voices.list()
 
-    print(f"\nVoces locales disponibles ({len(local_voices)}):")
-    for i, v in enumerate(local_voices, 1):
+    logger.info(f"Voces locales disponibles ({len(local_voices)})")
+    for v in local_voices:
         status = "OK" if v["valid"] else ("KO" if not v["has_reference_audio"] else "!?")
-        print(f"   {i}. {v['name']} (id: {v['id']}) {status}")
+        logger.info(f"  {v['name']} (id: {v['id']}) {status}")
 
     # Intentar clonar voz por defecto si hay modelos y voces disponibles
     if len(local_models) > 0 and len(local_voices) >= 1 and ctx.models.is_loaded():
@@ -221,20 +220,18 @@ async def startup_procedure(ctx: AppContext):
         else:
             selected_voice = local_voices[0]["name"]
 
-        print(f"\nIntentando clonar voz por defecto: {selected_voice}")
+        logger.info(f"Intentando clonar voz por defecto: {selected_voice}")
 
         try:
             async with ctx.queue.inference_lock():
                 await ctx.voices.load_voice(selected_voice)
-            print(f"Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
+            logger.info(f"Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
         except Exception as e:
-            print(f"Error creando voz clonada (continuar sin voice cloning): {e}")
+            logger.warning(f"Error creando voz clonada (continuar sin voice cloning): {e}")
 
-    print("\n" + "." * 30)
-    print("Escuchando...")
-    print("." * 30 + "\n")
-    print(f"INFO:     WebUI disponible en: http://localhost:{settings.server.port}/webui")
-    print(f"INFO:     Documentación de la API: http://localhost:{settings.server.port}/webui/docs\n")
+    logger.info("Escuchando...")
+    logger.info(f"WebUI disponible en: http://localhost:{settings.server.port}/webui")
+    logger.info(f"Documentación de la API: http://localhost:{settings.server.port}/webui/docs")
 
 
 async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
@@ -247,9 +244,7 @@ async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
     Aquí solo queda: (3) detener workers/tareas de fondo, (4) liberar
     modelos y VRAM, (5) limpiar recursos, (6) salir.
     """
-    print("\n" + "." * 30)
-    print("Apagando servidor...")
-    print("." * 30)
+    logger.info("Apagando servidor...")
 
     # 3. Detener tareas de fondo: limpieza periódica de audios, workers de
     #    la cola de inferencia (drenando jobs pendientes) y reproducción.
@@ -291,9 +286,7 @@ async def shutdown_procedure(ctx: AppContext, cleanup_task: asyncio.Task):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    print("." * 30)
-    print("Servidor detenido correctamente")
-    print("." * 30)
+    logger.info("Servidor detenido correctamente")
 
 
 # Punto de entrada principal
