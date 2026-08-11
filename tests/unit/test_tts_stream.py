@@ -140,7 +140,9 @@ def env(monkeypatch):
     monkeypatch.setattr(svc, "_generate_one", fake_generate_one)
     svc._generated = generated
 
+    from app import register_exception_handlers
     app = FastAPI()
+    register_exception_handlers(app)
     create_tts_routes(app, SimpleNamespace(tts=svc, audio=audio))
     return app, svc
 

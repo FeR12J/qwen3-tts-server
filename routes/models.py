@@ -9,8 +9,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from config.settings import settings
 from security.auth import require_admin
 from security.validation import validate_model_id
+from services.errors import APIError, ModelLoadingError
 from services.gpu_management import prepare_for_tts
-from services.model_manager import GPUOutOfMemoryError
 from services import whisper_service
 from schemas.models import LoadModelRequest
 
@@ -43,17 +43,15 @@ def create_models_routes(app: FastAPI, ctx):
                 }
 
             except FileNotFoundError as e:
-                raise HTTPException(404, str(e))
+                raise APIError("MODEL_NOT_FOUND", str(e), 404)
             except ValueError as e:
-                raise HTTPException(400, str(e))
-            except HTTPException:
-                raise
-            except GPUOutOfMemoryError:
+                raise APIError("INVALID_MODEL_ID", str(e), 400)
+            except (HTTPException, APIError):
                 raise
             except Exception as e:
                 logger.error(f"Error cargando modelo: {e}")
                 logger.debug(traceback.format_exc())
-                raise HTTPException(500, f"Error cargando modelo: {str(e)}")
+                raise ModelLoadingError(f"Error cargando modelo: {str(e)}")
 
     @app.post("/model/unload", dependencies=[Depends(require_admin)])
     async def unload_model_endpoint():

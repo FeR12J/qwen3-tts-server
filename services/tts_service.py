@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from schemas.tts import TTSRequest
 from services.audio_service import AudioValidationError
 from services.config_service import get_runtime_config, get_limits
+from services.errors import APIError, ModelLoadingError, ModelNotLoadedError
 from services.model_manager import ModelInfo
 from utils.chunker import TextChunker, TextChunkerError
 from utils.logging import log_event
@@ -29,14 +30,12 @@ logger = logging.getLogger("tts")
 CHARS_PER_SECOND = 16.0
 
 
-class TTSValidationError(Exception):
-    """Petición TTS inválida (400). Se traduce en:
+class TTSValidationError(APIError):
+    """Petición TTS inválida (400). Formato:
     {"error": {"code": "INVALID_TTS_REQUEST", "message": "..."}}."""
 
     def __init__(self, message: str, code: str = "INVALID_TTS_REQUEST"):
-        super().__init__(message)
-        self.code = code
-        self.message = message
+        super().__init__(code, message, 400)
 
 
 @dataclass
@@ -599,7 +598,7 @@ class TTSService:
                     f"(compatible con OpenWebUI). Usando el activo."
                 )
                 if active is None:
-                    raise TTSValidationError(
+                    raise ModelNotLoadedError(
                         "No hay modelo cargado. Usa /model/load primero."
                     )
                 return active
@@ -609,7 +608,9 @@ class TTSService:
                 raise TTSValidationError(f"Modelo '{request.model}' no encontrado") from e
             except Exception as e:
                 logger.error(f"Error cargando modelo '{request.model}': {e}")
-                raise TTSValidationError(f"No se pudo cargar el modelo '{request.model}'") from e
+                raise ModelLoadingError(
+                    f"No se pudo cargar el modelo '{request.model}'"
+                ) from e
         if active is None:
-            raise TTSValidationError("No hay modelo cargado. Usa /model/load primero.")
+            raise ModelNotLoadedError("No hay modelo cargado. Usa /model/load primero.")
         return active

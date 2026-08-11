@@ -15,7 +15,7 @@ from fastapi.responses import Response, StreamingResponse
 from security.auth import require_api_key
 from services.audio_service import TTS_SAMPLE_RATE
 from services.config_service import get_runtime_config
-from services.model_manager import GPUOutOfMemoryError
+from services.errors import APIError
 from schemas.tts import TTSRequest
 
 logger = logging.getLogger("tts")
@@ -38,7 +38,7 @@ def create_tts_routes(app: FastAPI, ctx):
         """
         try:
             result = await ctx.tts.synthesize(req_body, http_request=req)
-        except (HTTPException, GPUOutOfMemoryError):
+        except (HTTPException, APIError):
             raise
         except Exception as e:
             logger.error(f"Error en generación TTS: {e}")
@@ -75,7 +75,7 @@ def create_tts_routes(app: FastAPI, ctx):
             )
         try:
             plan = await ctx.tts.stream_plan(req_body)
-        except (HTTPException, GPUOutOfMemoryError):
+        except (HTTPException, APIError):
             raise
         except Exception as e:
             logger.error(f"Error preparando streaming: {e}")
@@ -117,7 +117,7 @@ def create_tts_routes(app: FastAPI, ctx):
         a que la reproducción anterior termine."""
         try:
             result = await ctx.tts.synthesize(req_body, http_request=req)
-        except (HTTPException, GPUOutOfMemoryError):
+        except (HTTPException, APIError):
             raise
         except Exception as e:
             logger.error(f"Error en reproducción TTS: {e}")

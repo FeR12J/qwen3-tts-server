@@ -5,8 +5,8 @@ cola interna (asyncio.Queue + worker GPU)."""
 import asyncio
 
 import pytest
-from fastapi import HTTPException
 
+from services.errors import APIError, QueueFullError
 from services.queue_service import QueueService
 
 
@@ -171,10 +171,11 @@ def test_queue_full_rejects_with_429():
         t3 = asyncio.create_task(inference(3))
         await asyncio.sleep(0.05)  # t2 y t3 ocupando la cola (2 en espera)
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(QueueFullError) as exc:
             async with q.inference_lock():
                 pass
         assert exc.value.status_code == 429
+        assert exc.value.code == "QUEUE_FULL"
 
         release.set()
         await asyncio.gather(t1, t2, t3)
@@ -199,10 +200,11 @@ def test_queue_rejects_with_503_during_shutdown():
         stop_task = asyncio.create_task(q.stop())
         await asyncio.sleep(0.05)  # stop() en curso, workers drenando
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(APIError) as exc:
             async with q.inference_lock():
                 pass
         assert exc.value.status_code == 503
+        assert exc.value.code == "SERVICE_UNAVAILABLE"
 
         release.set()
         await asyncio.gather(t1, stop_task)

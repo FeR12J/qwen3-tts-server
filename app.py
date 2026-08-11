@@ -11,7 +11,8 @@ from dataclasses import dataclass
 
 import torch
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -19,14 +20,15 @@ from config.settings import settings
 from utils.logging import setup_logging
 from utils.gpu import get_vram_available
 from services.config_service import load_runtime_config, apply_log_level
+from services.errors import APIError
 from services.queue_service import QueueService
-from services.model_manager import ModelManager, GPUOutOfMemoryError, GPU_OOM_MESSAGE
+from services.model_manager import ModelManager
 from services.voice_manager import VoiceManager
 from services.audio_service import AudioService
 from services.whisper_service import configure as configure_whisper
 from services import whisper_service
 from services.metrics_service import MetricsService
-from services.tts_service import TTSService, TTSValidationError
+from services.tts_service import TTSService
 from routes import (
     create_tts_routes,
     create_models_routes,
@@ -138,29 +140,77 @@ app.add_middleware(
 )
 
 
-@app.exception_handler(GPUOutOfMemoryError)
-async def gpu_out_of_memory_handler(request: Request, exc: GPUOutOfMemoryError):
-    """Respuesta controlada ante CUDA OOM: nunca se filtran detalles internos."""
-    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError):
+    request_id = exc.request_id or request.headers.get("x-request-id") or uuid.uuid4().hex
     return JSONResponse(
-        status_code=503,
+        status_code=exc.status_code,
         content={
             "error": {
-                "code": "GPU_OUT_OF_MEMORY",
-                "message": GPU_OOM_MESSAGE,
+                "code": exc.code,
+                "message": exc.message,
                 "request_id": request_id,
             }
         },
     )
 
 
-@app.exception_handler(TTSValidationError)
-async def tts_validation_handler(request: Request, exc: TTSValidationError):
-    """Error de validación de una petición TTS (400, en formato estándar)."""
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Cualquier HTTPException (FastAPI/uvicorn) se normaliza al mismo formato."""
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    code = f"HTTP_{exc.status_code}"
+    message = exc.detail
+    if isinstance(exc.detail, dict):
+        # Detalles que ya llevan estructura (p.ej. STREAMING_DISABLED)
+        err = exc.detail.get("error") or {}
+        message = err.get("message", exc.detail)
+        code = err.get("code", code)
     return JSONResponse(
-        status_code=400,
-        content={"error": {"code": exc.code, "message": exc.message}},
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "request_id": request_id,
+            }
+        },
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    """Errores 422 de validación de parámetros/body (FastAPI) unificados."""
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    errors = exc.errors()
+    if errors:
+        first = errors[0]
+        loc = ".".join(str(p) for p in first.get("loc", []))
+        message = f"Parámetro inválido '{loc}': {first.get('msg', '')}"
+    else:
+        message = "Petición inválida"
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": message,
+                "request_id": request_id,
+            }
+        },
+    )
+
+
+def register_exception_handlers(app: FastAPI):
+    """Registrar los handlers de error unificados en una app FastAPI.
+
+    La app principal los registra vía decoradores en este módulo; esta
+    función permite a apps de prueba (y embebidas) usar el mismo formato
+    sin duplicar los handlers.
+    """
+    app.add_exception_handler(APIError, api_error_handler)
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_handler)
 
 
 async def startup_procedure(ctx: AppContext):

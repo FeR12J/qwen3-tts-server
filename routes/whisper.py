@@ -10,8 +10,8 @@ from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from security.auth import require_api_key
 from services import whisper_service
 from services.config_service import get_limits
+from services.errors import APIError, InvalidAudioError
 from services.gpu_management import prepare_for_whisper
-from services.model_manager import GPUOutOfMemoryError
 
 logger = logging.getLogger("tts")
 
@@ -31,7 +31,7 @@ def create_whisper_routes(app: FastAPI, ctx):
         # Regla arquitectónica: validación SIEMPRE antes de adquirir el
         # inference_lock (la GPU nunca se bloquea validando input).
         if audio is None or not audio.filename:
-            raise HTTPException(400, "Archivo de audio requerido (campo 'audio')")
+            raise InvalidAudioError("Archivo de audio requerido (campo 'audio')")
 
         data = await audio.read()
         sl = get_limits()
@@ -48,7 +48,7 @@ def create_whisper_routes(app: FastAPI, ctx):
                 decode=True,
             )
         except ValueError as e:
-            raise HTTPException(400, str(e))
+            raise InvalidAudioError(str(e))
 
         async with ctx.queue.inference_lock():
             # Liberar VRAM del modelo TTS antes de cargar Whisper (si la config lo exige)
@@ -62,9 +62,7 @@ def create_whisper_routes(app: FastAPI, ctx):
                 raise HTTPException(404, str(e))
             except ValueError as e:
                 raise HTTPException(400, str(e))
-            except HTTPException:
-                raise
-            except GPUOutOfMemoryError:
+            except (HTTPException, APIError):
                 raise
             except Exception as e:
                 logger.error(f"Error en transcripción: {e}")

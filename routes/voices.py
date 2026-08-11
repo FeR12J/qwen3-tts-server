@@ -16,8 +16,8 @@ from security.validation import (
 from schemas.voices import LoadVoiceRequest
 from services.audio_service import SPEECH_SAMPLE_RATE, AudioService
 from services.config_service import get_limits, get_runtime
+from services.errors import APIError, InvalidVoiceError
 from services.gpu_management import prepare_for_tts
-from services.model_manager import GPUOutOfMemoryError
 from services import whisper_service
 
 logger = logging.getLogger("tts")
@@ -27,13 +27,13 @@ def create_voices_routes(app: FastAPI, ctx):
     """Rutas de gestión de voces: /voice/load, /voice/create, /voice/unload,
     /voices (list), /voices/{id} (get/update/delete)."""
 
-    def _validation_error(e) -> HTTPException:
-        """Traducir errores de validación/audio a 400."""
-        return HTTPException(400, str(e))
+    def _validation_error(e) -> APIError:
+        """Traducir errores de validación/audio a INVALID_VOICE (400)."""
+        return InvalidVoiceError(str(e))
 
     async def _read_and_validate_audio(audio: UploadFile) -> bytes:
         """Leer, validar y canonicalizar el audio subido (WAV 16 kHz mono
-        normalizado). Lanza HTTPException 400 si no es válido."""
+        normalizado). Lanza InvalidVoiceError 400 si no es válido."""
         data = await audio.read()
         sl = get_limits()
         try:
@@ -86,9 +86,7 @@ def create_voices_routes(app: FastAPI, ctx):
                 raise HTTPException(404, str(e))
             except ValueError as e:
                 raise HTTPException(400, str(e))
-            except HTTPException:
-                raise
-            except GPUOutOfMemoryError:
+            except (HTTPException, APIError):
                 raise
             except Exception as e:
                 logger.error(f"Error creando voz clonada: {e}")
@@ -117,7 +115,7 @@ def create_voices_routes(app: FastAPI, ctx):
         reject_path_traversal(voice_name, "voice_name")
         validate_voice_name(voice_name)
         if not text.strip():
-            raise HTTPException(400, "La transcripción no puede estar vacía")
+            raise InvalidVoiceError("La transcripción no puede estar vacía")
         wav_bytes = await _read_and_validate_audio(audio)
 
         # Sección crítica (GPU): cargar modelo y guardar/aplicar la voz.
@@ -143,9 +141,7 @@ def create_voices_routes(app: FastAPI, ctx):
                     "message": f"Voz '{created_id}' creada, guardada y aplicada",
                 }
 
-            except HTTPException:
-                raise
-            except GPUOutOfMemoryError:
+            except (HTTPException, APIError):
                 raise
             except ValueError as e:
                 raise HTTPException(400, str(e))
@@ -187,7 +183,7 @@ def create_voices_routes(app: FastAPI, ctx):
             reject_path_traversal(name, "name")
             validate_voice_name(name)
         if text is not None and not text.strip():
-            raise HTTPException(400, "La transcripción no puede estar vacía")
+            raise InvalidVoiceError("La transcripción no puede estar vacía")
         wav_bytes = None
         if audio is not None:
             wav_bytes = await _read_and_validate_audio(audio)
@@ -212,9 +208,7 @@ def create_voices_routes(app: FastAPI, ctx):
                 raise HTTPException(404, str(e))
             except ValueError as e:
                 raise HTTPException(400, str(e))
-            except HTTPException:
-                raise
-            except GPUOutOfMemoryError:
+            except (HTTPException, APIError):
                 raise
             except Exception as e:
                 logger.error(f"Error actualizando voz '{voice_id}': {e}")

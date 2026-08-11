@@ -78,7 +78,9 @@ def env(monkeypatch):
         voices=DummyVoices(),
         audio=AudioService(SimpleNamespace(), None),
     )
+    from app import register_exception_handlers
     app = FastAPI()
+    register_exception_handlers(app)
     create_voices_routes(app, ctx)
     return TestClient(app), queue, calls
 

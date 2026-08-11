@@ -12,9 +12,10 @@ Tres niveles:
     permite el acceso (para poder crear la primera clave).
 """
 
-from fastapi import Request, HTTPException
+from fastapi import Request
 
 from services import apikey_service
+from services.errors import AuthenticationError
 
 
 def _extract_key(request: Request):
@@ -33,7 +34,7 @@ async def require_api_key(request: Request):
         return
     key = _extract_key(request)
     if not key or not apikey_service.verify_key(key):
-        raise HTTPException(401, "API key inválida o no proporcionada")
+        raise AuthenticationError("API key inválida o no proporcionada")
 
 
 async def require_admin(request: Request):
@@ -46,4 +47,6 @@ async def require_admin(request: Request):
         return
     key = _extract_key(request)
     if not key or not apikey_service.verify_key(key):
-        raise HTTPException(401, "API key de administración inválida o no proporcionada")
+        raise AuthenticationError(
+            "API key de administración inválida o no proporcionada"
+        )

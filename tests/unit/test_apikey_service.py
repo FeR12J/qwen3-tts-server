@@ -4,7 +4,7 @@
 import json
 
 import pytest
-from fastapi import HTTPException
+from services.errors import AuthenticationError
 
 from config.settings import settings
 from security import auth
@@ -92,7 +92,7 @@ async def test_require_api_key_disabled_allows(keys_file, monkeypatch):
 @pytest.mark.asyncio
 async def test_require_api_key_enabled_blocks_without_key(keys_file, monkeypatch):
     monkeypatch.setattr(settings.runtime, "api_keys_enabled", True)
-    with pytest.raises(HTTPException) as e:
+    with pytest.raises(AuthenticationError) as e:
         await auth.require_api_key(FakeRequest())
     assert e.value.status_code == 401
 
@@ -114,7 +114,7 @@ async def test_require_admin_bootstrap_no_keys(keys_file):
 async def test_require_admin_requires_key_even_if_disabled(keys_file, monkeypatch):
     monkeypatch.setattr(settings.runtime, "api_keys_enabled", False)
     created = apikey_service.create_key("OpenWebUI")
-    with pytest.raises(HTTPException) as e:
+    with pytest.raises(AuthenticationError) as e:
         await auth.require_admin(FakeRequest())
     assert e.value.status_code == 401
     await auth.require_admin(FakeRequest({"authorization": f"Bearer {created['key']}"}))
@@ -123,5 +123,5 @@ async def test_require_admin_requires_key_even_if_disabled(keys_file, monkeypatc
 @pytest.mark.asyncio
 async def test_require_admin_invalid_key(keys_file):
     apikey_service.create_key("OpenWebUI")
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthenticationError):
         await auth.require_admin(FakeRequest({"x-api-key": "qt-0000"}))

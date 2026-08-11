@@ -29,19 +29,7 @@ class ModelState(str, Enum):
     ERROR = "error"
 
 
-# Mensaje público: nunca se exponen detalles internos al cliente
-GPU_OOM_MESSAGE = "Not enough GPU memory to process this request."
-
-
-class GPUOutOfMemoryError(RuntimeError):
-    """Error controlado de memoria de GPU (CUDA OOM).
-
-    Se eleva tras capturar torch.cuda.OutOfMemoryError para que la capa HTTP
-    pueda devolver una respuesta controlada sin filtrar detalles internos.
-    """
-
-    def __init__(self):
-        super().__init__(GPU_OOM_MESSAGE)
+from services.errors import GPUOutOfMemoryError, GPU_OOM_MESSAGE
 
 
 @dataclass(frozen=True)

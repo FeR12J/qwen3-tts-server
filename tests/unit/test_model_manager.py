@@ -405,16 +405,16 @@ def test_cuda_oom_during_inference_recovers(models_dir, monkeypatch):
 
 
 def test_gpu_oom_http_response_shape():
-    """El handler HTTP devuelve el JSON controlado (503) con request_id."""
+    """El handler unificado de errores devuelve el JSON controlado (503)."""
     from fastapi import Request
-    from app import gpu_out_of_memory_handler
+    from app import api_error_handler
 
     async def run():
         scope = {
             "type": "http",
             "headers": [(b"x-request-id", b"abc123")],
         }
-        resp = await gpu_out_of_memory_handler(Request(scope), mm.GPUOutOfMemoryError())
+        resp = await api_error_handler(Request(scope), mm.GPUOutOfMemoryError())
         return resp
 
     resp = asyncio.run(run())

@@ -18,7 +18,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import HTTPException
+from services.errors import APIError, QueueFullError
 
 logger = logging.getLogger("tts")
 
@@ -172,9 +172,10 @@ class QueueService:
         self.start()  # arranque perezoso del worker
         if self._stopping:
             # El servidor está en apagado: no se aceptan peticiones nuevas.
-            raise HTTPException(
-                503,
+            raise APIError(
+                "SERVICE_UNAVAILABLE",
                 "Servidor en proceso de apagado: no se aceptan nuevas peticiones.",
+                503,
             )
         token = _QueueToken()
         try:
@@ -182,11 +183,7 @@ class QueueService:
         except asyncio.QueueFull:
             # Servidor activo pero la cola de espera está llena: la petición
             # debe reintentarse más tarde.
-            raise HTTPException(
-                429,
-                f"Cola de inferencia llena ({self._queue.maxsize} peticiones en espera). "
-                "Reintenta en unos segundos.",
-            )
+            raise QueueFullError(self._queue.maxsize)
         try:
             await token.wait_granted()
             async with self._inference_semaphore:
