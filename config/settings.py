@@ -99,12 +99,28 @@ class LimitsSettings(BaseModel):
       (clonación de voz) en MB.
     - ``max_audio_duration_seconds``: duración máxima estimada del audio
       generado (estimada desde la longitud del texto, ~16 caracteres/segundo).
+    - ``max_reference_duration_seconds``: duración máxima del audio de
+      referencia (clonación de voz), comprobada antes de usar GPU.
+    - ``max_voice_audio_bytes`` / ``max_voice_audio_duration_seconds``:
+      tamaño y duración máximos del audio subido para crear voces.
+    - ``max_transcribe_audio_bytes`` / ``max_transcribe_duration_seconds``:
+      tamaño y duración máximos del audio a transcribir con Whisper.
+    - ``min_sample_rate`` / ``max_sample_rate``: rango de sample rate
+      aceptado en audios de entrada.
+    - ``max_channels``: canales máximo admitido en audios de entrada.
     """
     audios_max_age_days: int = 7
     max_voice_audio_bytes: int = 50 * 1024 * 1024
+    max_transcribe_audio_bytes: int = 100 * 1024 * 1024
     max_text_characters: int = 10000
     max_reference_audio_mb: int = 25
     max_audio_duration_seconds: int = 30
+    max_reference_duration_seconds: int = 60
+    max_voice_audio_duration_seconds: int = 120
+    max_transcribe_duration_seconds: int = 600
+    min_sample_rate: int = 8000
+    max_sample_rate: int = 96000
+    max_channels: int = 2
 
 
 class QueueSettings(BaseModel):

@@ -6,22 +6,17 @@ import traceback
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
+from config.settings import settings
 from security.auth import require_admin
 from security.permissions import require_model_loaded, ensure_voice_cloning_supported
-from security.validation import (
-    validate_voice_name,
-    validate_wav_upload,
-    validate_audio_size,
-)
+from security.validation import validate_voice_name
 from schemas.voices import LoadVoiceRequest
+from services.audio_service import SPEECH_SAMPLE_RATE, AudioService
 from services.gpu_management import prepare_for_tts
 from services.model_manager import GPUOutOfMemoryError
 from services import whisper_service
 
 logger = logging.getLogger("tts")
-
-# Tamaño máximo del audio subido para crear voces (50 MB)
-MAX_VOICE_AUDIO_BYTES = 50 * 1024 * 1024
 
 
 def create_voices_routes(app: FastAPI, ctx):
@@ -65,7 +60,8 @@ def create_voices_routes(app: FastAPI, ctx):
         text: str = Form(...),
         audio: UploadFile = File(...),
     ):
-        """Crear una voz subiendo un WAV y su transcripción. La guarda y la clona."""
+        """Crear una voz subiendo un audio (wav, mp3, flac, ogg, m4a) y su
+        transcripción. Se normaliza y guarda como WAV 16 kHz mono, y se clona."""
         async with ctx.queue.inference_lock():
             await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
             await require_model_loaded(ctx.models)
@@ -74,14 +70,31 @@ def create_voices_routes(app: FastAPI, ctx):
             validate_voice_name(voice_name)
             if not text.strip():
                 raise HTTPException(400, "La transcripción no puede estar vacía")
-            validate_wav_upload(audio)
             await ensure_voice_cloning_supported(ctx.models)
 
             data = await audio.read()
-            validate_audio_size(data, MAX_VOICE_AUDIO_BYTES)
+            sl = settings.limits
+            try:
+                ctx.audio.validate(
+                    data,
+                    max_bytes=sl.max_voice_audio_bytes,
+                    max_duration=sl.max_voice_audio_duration_seconds,
+                    filename=audio.filename,
+                    content_type=audio.content_type,
+                    formats=AudioService.FORMATS,
+                    min_sample_rate=sl.min_sample_rate,
+                    max_sample_rate=sl.max_sample_rate,
+                    max_channels=sl.max_channels,
+                    decode=True,
+                )
+            except ValueError as e:
+                raise HTTPException(400, str(e))
 
             try:
-                await ctx.voices.create_voice(voice_name, text.strip(), data)
+                # Canonicalizar: 16 kHz mono + normalización de amplitud.
+                wav, sr = ctx.audio.load(data, target_sr=SPEECH_SAMPLE_RATE)
+                wav_bytes = ctx.audio.convert(ctx.audio.normalize(wav), sr, "wav")
+                await ctx.voices.create_voice(voice_name, text.strip(), wav_bytes)
                 active = await ctx.models.get_active_model()
                 return {
                     "status": "ok",

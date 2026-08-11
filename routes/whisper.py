@@ -10,15 +10,11 @@ from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
 from config.settings import settings
 from security.auth import require_api_key
-from security.validation import validate_audio_size
 from services import whisper_service
 from services.gpu_management import prepare_for_whisper
 from services.model_manager import GPUOutOfMemoryError
 
 logger = logging.getLogger("tts")
-
-# Tamaño máximo del audio a transcribir (100 MB)
-MAX_TRANSCRIBE_AUDIO_BYTES = 100 * 1024 * 1024
 
 
 def create_whisper_routes(app: FastAPI, ctx):
@@ -43,13 +39,27 @@ def create_whisper_routes(app: FastAPI, ctx):
                 raise HTTPException(400, "Archivo de audio requerido (campo 'audio')")
 
             data = await audio.read()
-            validate_audio_size(data, MAX_TRANSCRIBE_AUDIO_BYTES)
+            sl = settings.limits
+            try:
+                ctx.audio.validate(
+                    data,
+                    max_bytes=sl.max_transcribe_audio_bytes,
+                    max_duration=sl.max_transcribe_duration_seconds,
+                    filename=audio.filename,
+                    content_type=audio.content_type,
+                    min_sample_rate=sl.min_sample_rate,
+                    max_sample_rate=sl.max_sample_rate,
+                    max_channels=sl.max_channels,
+                    decode=True,
+                )
+            except ValueError as e:
+                raise HTTPException(400, str(e))
 
             # Liberar VRAM del modelo TTS antes de cargar Whisper (si la config lo exige)
             await prepare_for_whisper(ctx.models, ctx.voices, whisper_service)
 
             try:
-                result = await asyncio.to_thread(whisper_service.transcribe, data, language)
+                result = await asyncio.to_thread(whisper_service.transcribe, data, language, ctx.audio)
                 logger.info(f"Transcripción completada ({result['language']}, {result['duration_seconds']}s)")
                 return {"status": "ok", **result}
             except FileNotFoundError as e:

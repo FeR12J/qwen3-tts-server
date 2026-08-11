@@ -3,19 +3,15 @@
 
 import os
 import re
-import io
 import gc
-import wave
-import shutil
 import logging
-import subprocess
-import tempfile
 from typing import Optional
 
 import numpy as np
 import torch
 
 from config.settings import settings
+from services.audio_service import SPEECH_SAMPLE_RATE
 from services.config_service import resolve_device
 from utils.gpu import get_dtype
 
@@ -89,51 +85,16 @@ def unload_if_loaded() -> bool:
     return True
 
 
-def _decode_audio(audio_bytes: bytes) -> tuple:
-    """Decodificar audio a mono float32 a 16 kHz (wav, mp3, flac, ogg, m4a...)."""
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is not None:
-        try:
-            return _decode_with_ffmpeg(audio_bytes, ffmpeg)
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.warning(f"ffmpeg falló ({e}); probando soundfile...")
-    try:
-        return _decode_with_soundfile(audio_bytes)
-    except Exception as e:
-        raise ValueError(f"No se pudo decodificar el audio ({e}). Formatos soportados: wav, mp3, flac, ogg, m4a")
+def transcribe(audio_bytes: bytes, language: Optional[str] = None, audio_service=None) -> dict:
+    """Transcribir audio a texto (bloqueante, ejecutar en hilo).
 
-
-def _decode_with_ffmpeg(audio_bytes: bytes, ffmpeg: str) -> tuple:
-    with tempfile.NamedTemporaryFile() as tmp:
-        tmp.write(audio_bytes)
-        tmp.flush()
-        proc = subprocess.run(
-            [ffmpeg, "-v", "error", "-i", tmp.name, "-f", "wav", "-ar", "16000", "-ac", "1", "-"],
-            capture_output=True,
-        )
-    if proc.returncode != 0 or not proc.stdout:
-        raise ValueError(proc.stderr.decode(errors="ignore").strip() or "error de ffmpeg")
-    wav = wave.open(io.BytesIO(proc.stdout), "rb")
-    audio = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype("float32") / 32768.0
-    return audio, float(audio.shape[0]) / 16000.0
-
-
-def _decode_with_soundfile(audio_bytes: bytes) -> tuple:
-    import soundfile as sf
-    audio, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
-    if sr != 16000:
-        from scipy.signal import resample_poly
-        audio = resample_poly(audio, 16000, sr).astype("float32")
-    return audio, float(audio.shape[0]) / 16000.0
-
-
-def transcribe(audio_bytes: bytes, language: Optional[str] = None) -> dict:
-    """Transcribir audio a texto (bloqueante, ejecutar en hilo)."""
-    audio, duration = _decode_audio(audio_bytes)
+    La decodificación (wav, mp3, flac, ogg, m4a... a 16 kHz mono float32)
+    la realiza AudioService.
+    """
+    if audio_service is None:
+        raise ValueError("audio_service requerido para decodificar el audio")
+    audio, sr = audio_service.load(audio_bytes, target_sr=SPEECH_SAMPLE_RATE)
+    duration = float(audio.shape[0]) / sr
     _ensure_loaded()
 
     device = _model.device

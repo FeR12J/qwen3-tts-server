@@ -39,23 +39,6 @@ def validate_model_id(model_id: str):
         raise HTTPException(400, "model_id vacío")
 
 
-def validate_wav_upload(upload) -> None:
-    """Validar que el archivo subido sea un WAV."""
-    if not upload.filename or not upload.filename.lower().endswith(".wav"):
-        raise HTTPException(400, "El archivo debe ser un WAV (.wav)")
-
-
-def validate_audio_size(data: bytes, max_bytes: int, allow_empty: bool = False):
-    """Validar el tamaño del audio subido."""
-    if not allow_empty and len(data) == 0:
-        raise HTTPException(400, "El archivo de audio está vacío")
-    if len(data) > max_bytes:
-        raise HTTPException(
-            400,
-            f"El archivo excede {max_bytes // (1024 * 1024)} MB",
-        )
-
-
 def validate_config_update(changes: dict, config_service):
     """Validar los campos de configuración en tiempo de ejecución."""
     if "max_text_chars" in changes and (changes["max_text_chars"] is None or changes["max_text_chars"] <= 0):

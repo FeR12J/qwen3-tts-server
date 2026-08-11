@@ -72,7 +72,7 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
     <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar el modelo actual y liberar VRAM</td><td>Admin</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/models</code></td><td>Listar modelos disponibles (alias <code>/tts/audio/models</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Admin</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz subiendo un WAV + transcripción (multipart). La guarda y la clona</td><td>Admin</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz subiendo audio (wav/mp3/flac/ogg/m4a) + transcripción. La normaliza y clona</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe</code></td><td>Transcribir audio a texto con Whisper (multipart: <code>audio</code>, opcional <code>language</code>)</td><td>Sí</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/transcribe/status</code></td><td>Estado del modelo Whisper (cargado/descargado, dispositivo)</td><td>No</td></tr>
@@ -183,8 +183,13 @@ curl -N -X POST http://localhost:8001/tts/stream \
   <li><code>limits.max_text_characters</code> (por defecto 10000): longitud máxima del texto por petición.</li>
   <li><code>limits.max_reference_audio_mb</code> (por defecto 25): tamaño máximo del audio de referencia de clonación (<code>reference_audio</code> o voces locales).</li>
   <li><code>limits.max_audio_duration_seconds</code> (por defecto 30): duración estimada del audio generado a partir de la longitud del texto (~16 caracteres/segundo).</li>
+  <li><code>limits.max_reference_duration_seconds</code> (por defecto 60): duración máxima del audio de referencia de clonación, verificada decodificando el archivo antes de usar GPU.</li>
+  <li><code>limits.max_voice_audio_duration_seconds</code> (por defecto 120) y <code>limits.max_voice_audio_bytes</code> (50 MB): duración y tamaño máximos del audio subido para crear voces.</li>
+  <li><code>limits.max_transcribe_duration_seconds</code> (por defecto 600) y <code>limits.max_transcribe_audio_bytes</code> (100 MB): duración y tamaño máximos del audio a transcribir.</li>
+  <li><code>limits.min_sample_rate</code> (8000), <code>limits.max_sample_rate</code> (96000) y <code>limits.max_channels</code> (2): rango de sample rate y canales admitidos en audios de entrada.</li>
 </ul>
-<p>Variables de entorno: <code>QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS</code>, <code>QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB</code>, <code>QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS</code>.</p>
+<p>La validación de audio (en <code>AudioService.validate</code>) no confía en la extensión del archivo: comprueba tipo MIME, bytes mágicos del contenido real, tamaño, duración, sample rate, canales y decodifica el contenido completo (rechaza archivos corruptos o sin datos antes de consumir GPU).</p>
+<p>Variables de entorno: <code>QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS</code>, <code>QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB</code>, <code>QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS</code>, <code>QWEN_TTS_LIMITS__MAX_REFERENCE_DURATION_SECONDS</code>, <code>QWEN_TTS_LIMITS__MIN_SAMPLE_RATE</code>, <code>QWEN_TTS_LIMITS__MAX_SAMPLE_RATE</code>, <code>QWEN_TTS_LIMITS__MAX_CHANNELS</code>, <code>QWEN_TTS_LIMITS__MAX_VOICE_AUDIO_DURATION_SECONDS</code>, <code>QWEN_TTS_LIMITS__MAX_TRANSCRIBE_DURATION_SECONDS</code>.</p>
 
 <h2>Textos largos</h2>
 <p>Los endpoints aceptan textos de hasta <code>limits.max_text_characters</code> (por defecto 10000). El texto se divide en fragmentos con <code>utils/chunker.py</code> antes de generar:</p>

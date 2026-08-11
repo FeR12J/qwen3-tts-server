@@ -9,7 +9,6 @@ from security.validation import (
     require_text,
     validate_voice_name,
     validate_model_id,
-    validate_audio_size,
 )
 
 
@@ -49,14 +48,6 @@ def test_validate_model_id():
     with pytest.raises(HTTPException):
         validate_model_id("")
     validate_model_id("model-x")
-
-
-def test_validate_audio_size():
-    with pytest.raises(HTTPException):
-        validate_audio_size(b"", 1024)
-    with pytest.raises(HTTPException):
-        validate_audio_size(b"x" * 1025, 1024)
-    validate_audio_size(b"x" * 1024, 1024)
 
 
 def test_validate_config_update_dtype():

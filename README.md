@@ -29,7 +29,7 @@ qwen3-tts-server/
 │   ├── voice_manager.py # Voces locales y prompt de clonación activo
 │   ├── tts_service.py   # Generación TTS (despacho por tipo de modelo)
 │   ├── whisper_service.py  # Transcripción con Whisper (transformers)
-│   ├── audio_service.py # Codificación WAV, guardado, limpieza y reproducción local
+│   ├── audio_service.py # Audio central: decodificar, validar, normalizar, convertir, duración
 │   ├── queue_service.py # Semáforo de inferencia y serialización de reproducciones
 │   ├── metrics_service.py  # Contadores de actividad, logs y VRAM
 │   ├── config_service.py   # Configuración en tiempo de ejecución
@@ -104,7 +104,7 @@ El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muest
 | ADMIN | POST | `/model/load` | Cargar modelo local |
 | ADMIN | POST | `/model/unload` | Descargar modelo y liberar VRAM |
 | ADMIN | POST | `/voice/load` | Cargar voz para clonación (solo modelos `base`) |
-| ADMIN | POST | `/voice/create` | Subir WAV + transcripción (multipart), la guarda y la clona |
+| ADMIN | POST | `/voice/create` | Subir audio (wav/mp3/flac/ogg/m4a) + transcripción, la normaliza y clona |
 | ADMIN | POST | `/voice/unload` | Desactivar voice cloning |
 | ADMIN | GET/POST | `/webui/api/config` | Leer/actualizar configuración en tiempo de ejecución |
 | ADMIN | GET/POST | `/webui/api/apikeys` | Listar/crear claves API |
@@ -160,14 +160,14 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
 ## Configuración
 
 ### config/settings.py
-- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `text` (`chunking` = modo de división `sentence`/`paragraph`), `whisper` (`whisper_model`), `limits` (límites de entrada, comprobados antes de usar GPU: `max_text_characters` = 10000, `max_reference_audio_mb` = 25, `max_audio_duration_seconds` = 30), `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars` = tamaño máximo de cada fragmento generado, `device`, `dtype`, flags de VRAM, etc.).
+- `settings`: instancia única de `Settings` (Pydantic). Grupos: `server` (host `0.0.0.0`, puerto `8001`), `paths` (directorios), `tts` (`default_model`, `default_voice`), `text` (`chunking` = modo de división `sentence`/`paragraph`), `whisper` (`whisper_model`), `limits` (límites de entrada, comprobados antes de usar GPU: `max_text_characters` = 10000, `max_reference_audio_mb` = 25, `max_audio_duration_seconds` = 30, `max_reference_duration_seconds` = 60, `max_voice_audio_duration_seconds` = 120, `max_transcribe_duration_seconds` = 600, `min_sample_rate` = 8000, `max_sample_rate` = 96000, `max_channels` = 2), `queue`, `auth`, `logging` y `runtime` (editable desde el panel y persistida en `data/runtime.json`: `max_text_chars` = tamaño máximo de cada fragmento generado, `device`, `dtype`, flags de VRAM, etc.).
 - Variables de entorno con prefijo `QWEN_TTS_`. Soporta al menos:
   - `QWEN_TTS_HOST=0.0.0.0`, `QWEN_TTS_PORT=8001`
   - `QWEN_TTS_DEVICE=cuda:0` (o `auto`/`cpu`), `QWEN_TTS_DTYPE=bfloat16` (o `float16`/`float32`/`auto`)
   - `QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
   - `QWEN_TTS_REQUIRE_API_KEY=true`
   - `QWEN_TTS_TEXT__CHUNKING=sentence`
-  - `QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS=10000`, `QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB=25`, `QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS=30`
+  - `QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS=10000`, `QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB=25`, `QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS=30`, `QWEN_TTS_LIMITS__MAX_REFERENCE_DURATION_SECONDS=60`, `QWEN_TTS_LIMITS__MIN_SAMPLE_RATE=8000`, `QWEN_TTS_LIMITS__MAX_SAMPLE_RATE=96000`, `QWEN_TTS_LIMITS__MAX_CHANNELS=2`
   - `QWEN_TTS_VOICES_DIR=./voices`, `QWEN_TTS_AUDIO_DIR=./audios`
 - El resto de campos usa el nombre por subgrupo (`QWEN_TTS_<GRUPO>__<CAMPO>`), p.ej. `QWEN_TTS_CORS__ALLOW_ORIGINS=["*"]`.
 - Precedencia: variables de entorno > `data/runtime.json` > defaults. Las variables `QWEN_TTS_DEVICE`, `QWEN_TTS_DTYPE` y `QWEN_TTS_REQUIRE_API_KEY` (configuración en tiempo de ejecución) tienen prioridad sobre el archivo persistido.

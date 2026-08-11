@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass
 
 from schemas.tts import TTSRequest
+from services.audio_service import AudioValidationError
 from services.config_service import get_runtime_config
 from services.model_manager import ModelInfo
 from utils.chunker import TextChunker, TextChunkerError
@@ -69,18 +70,22 @@ class TTSService:
     # -- Referencias de voz -------------------------------------------------
 
     def _check_ref_audio_size(self, wav_path: str):
-        """Limitar el tamaño del audio de referencia (antes de usar GPU)."""
+        """Validar el audio de referencia (tamaño, duración, sample rate,
+        canales y contenido completo) antes de usar GPU. Delega en AudioService."""
         from config.settings import settings
-        max_bytes = settings.limits.max_reference_audio_mb * 1024 * 1024
+        limits = settings.limits
         try:
-            size = os.path.getsize(wav_path)
-        except OSError as e:
-            raise TTSValidationError(f"No se pudo leer el audio de referencia: {e}")
-        if size > max_bytes:
-            raise TTSValidationError(
-                f"Audio de referencia demasiado grande: {size / (1024 * 1024):.1f} MB "
-                f"(máximo configurado: {settings.limits.max_reference_audio_mb} MB)."
+            self._audio.validate(
+                wav_path,
+                max_bytes=limits.max_reference_audio_mb * 1024 * 1024,
+                max_duration=limits.max_reference_duration_seconds,
+                min_sample_rate=limits.min_sample_rate,
+                max_sample_rate=limits.max_sample_rate,
+                max_channels=limits.max_channels,
+                decode=True,
             )
+        except AudioValidationError as e:
+            raise TTSValidationError(str(e))
 
     def _local_voice_ref(self, name: str):
         """(wav, text) de una voz local por nombre, o None si no existe."""
