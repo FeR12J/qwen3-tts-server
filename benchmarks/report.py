@@ -17,7 +17,6 @@ import csv
 import glob
 import json
 import os
-import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(HERE, "results")

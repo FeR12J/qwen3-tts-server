@@ -145,7 +145,7 @@ def create_models_routes(app: FastAPI, ctx):
         validate_model_id(model_id)
         try:
             return await model_downloader.start_download(model_id)
-        except APIError as e:
+        except APIError:
             raise
         except Exception as e:
             logger.error(f"Error iniciando descarga de '{model_id}': {e}")

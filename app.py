@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Aplicación principal del servidor TTS."""
 
-import os
 import asyncio
 import contextvars
 import gc
@@ -61,10 +60,6 @@ class DynamicCORSMiddleware(CORSMiddleware):
             else:
                 _cors_state.set((False, ()))
         await super().__call__(scope, receive, send)
-
-    def is_allowed_origin(self, origin: str) -> bool:
-        wildcard, origins = _cors_state.get() or (False, ())
-        return wildcard or origin in origins
 
     def preflight_response(self, request_headers):
         wildcard, _ = _cors_state.get() or (False, ())

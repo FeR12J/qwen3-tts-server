@@ -9,7 +9,6 @@ from services.errors import AuthenticationError
 from config.settings import settings
 from security import auth
 from services import apikey_service
-from storage import config_storage
 
 
 class FakeRequest:

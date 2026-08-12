@@ -573,7 +573,7 @@ async def _run(client, args, texts):
     else:
         raise SystemExit(f"Benchmark desconocido: {args.bench_unit}")
 
-    path = _save(bench)
+    _save(bench)
     _print_table(bench)
 
 

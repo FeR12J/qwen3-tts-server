@@ -216,7 +216,7 @@ def test_load_and_unload_voice(manager):
     with pytest.raises(FileNotFoundError):
         asyncio.run(vm.load_voice("no-existe"))
 
-    vid = asyncio.run(vm.create("Voz", "texto", REFERENCE_WAV))
+    asyncio.run(vm.create("Voz", "texto", REFERENCE_WAV))
     assert vm.clone_active
     assert vm.unload_voice() is True
     assert not vm.clone_active and vm.active_voice_id is None

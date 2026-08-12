@@ -2,7 +2,6 @@
 """Tests unitarios del almacenamiento de configuración."""
 
 import json
-import os
 
 from storage import config_storage
 

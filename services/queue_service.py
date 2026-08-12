@@ -84,7 +84,6 @@ class QueueService:
         self._playback_lock = asyncio.Lock()
         self._playback_proc = [None]
 
-        self._queue_enabled = bool(enabled)
         self._queue = asyncio.Queue(maxsize=max_size) if enabled else None
         self._workers_started = False
         self._stopping = False
@@ -224,9 +223,10 @@ class QueueService:
                     logger.error(f"Timeout esperando a la reproducción anterior ({timeout}s)")
                     proc.kill()
                     await asyncio.to_thread(proc.wait)
-                    raise HTTPException(
-                        504,
+                    raise APIError(
+                        "PLAYBACK_TIMEOUT",
                         f"Timeout esperando a que termine la reproducción anterior ({timeout}s)",
+                        504,
                     )
             self._playback_proc[0] = None
             yield

@@ -6,7 +6,6 @@ import asyncio
 import pytest
 
 from config.settings import settings
-from services import config_service
 from services import gpu_management as gm
 from services import model_manager as mm
 from services import whisper_service as ws

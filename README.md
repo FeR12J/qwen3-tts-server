@@ -81,6 +81,12 @@ Descargar los modelos en `models/`:
 
 El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muestra en la respuesta de `/model/load`.
 
+## Benchmark
+
+El repositorio incluye los datos y resultados del benchmark. Para conocer la metodología, el contexto y el análisis de los resultados:
+
+[Benchmark de Qwen3-TTS Server en AtlasZN →](https://atlaszn.com/blog/benchmark-qwen3-tts-server/)
+
 ## Endpoints
 
 | Nivel | Método | Endpoint | Descripción |
