@@ -9,9 +9,9 @@ from fastapi import FastAPI, Depends, HTTPException
 from config.settings import settings
 from security.auth import require_admin
 from security.validation import validate_model_id
+from services import model_downloader, whisper_service
 from services.errors import APIError, ModelLoadingError, ModelNotLoadedError
 from services.gpu_management import prepare_for_tts
-from services import whisper_service
 from schemas.models import LoadModelRequest
 
 logger = logging.getLogger("tts")
@@ -125,3 +125,29 @@ def create_models_routes(app: FastAPI, ctx):
         except Exception as e:
             logger.error(f"Error listando modelos: {e}")
             raise HTTPException(500, f"Error leyendo directorio de modelos: {str(e)}")
+
+    # -- Descarga de modelos soportados ------------------------------------
+
+    @app.get("/models/download/status")
+    async def models_download_status():
+        """Estado de los modelos soportados (instalado / descargando / error)."""
+        return {"models": model_downloader.list_status()}
+
+    @app.post("/models/download", dependencies=[Depends(require_admin)])
+    async def models_download(req_body: LoadModelRequest):
+        """Descargar un modelo soportado (whitelist) a models/.
+
+        Solo acepta los nombres de modelo de la lista establecida; nunca un
+        repo_id arbitrario. La descarga corre en segundo plano (estado en
+        /models/download/status) y solo una a la vez.
+        """
+        model_id = req_body.model_id.strip()
+        validate_model_id(model_id)
+        try:
+            return await model_downloader.start_download(model_id)
+        except APIError as e:
+            raise
+        except Exception as e:
+            logger.error(f"Error iniciando descarga de '{model_id}': {e}")
+            logger.debug(traceback.format_exc())
+            raise APIError("DOWNLOAD_FAILED", f"Error iniciando la descarga: {str(e)}", 500)

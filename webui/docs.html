@@ -73,13 +73,15 @@ Authorization: Bearer qt-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
     <tr><td><span class="method m-post">POST</span></td><td><code>/model/unload</code></td><td>Descargar un modelo y liberar VRAM. Sin cuerpo: descarga el activo; con <code>{ "model_id": "..." }</code>: el indicado</td><td>Admin</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/models</code></td><td>Listar modelos disponibles (alias <code>/tts/audio/models</code>)</td><td>No</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/models/status</code></td><td>Estado por modelo: model, type, state, device, active (alias <code>/tts/audio/models/status</code>)</td><td>No</td></tr>
+    <tr><td><span class="method m-get">GET</span></td><td><code>/models/download/status</code></td><td>Estado de los modelos soportados: instalado, descargando, error, tamaño</td><td>No</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/models/download</code></td><td>Descargar un modelo soportado <code>{ "model_id": "..." }</code> (solo whitelist, en segundo plano, uno a la vez)</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/load</code></td><td>Clonar voz local <code>{ "voice_name": "..." }</code></td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/create</code></td><td>Crear voz: multipart <code>audio</code> + <code>text</code> + <code>voice_name</code>, opc. <code>language</code>, <code>description</code>. Id generado por el servidor</td><td>Admin</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/voice/unload</code></td><td>Desactivar voice cloning</td><td>Admin</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/voices/{voice_id}</code></td><td>Metadata de una voz (id, name, language, description, created_at, ...)</td><td>Admin</td></tr>
     <tr><td><span class="method m-patch">PATCH</span></td><td><code>/voices/{voice_id}</code></td><td>Actualizar metadata y/o referencia (name, language, description, text, audio)</td><td>Admin</td></tr>
     <tr><td><span class="method m-delete">DELETE</span></td><td><code>/voices/{voice_id}</code></td><td>Eliminar una voz</td><td>Admin</td></tr>
-    <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe</code></td><td>Transcribir audio a texto con Whisper (multipart: <code>audio</code>, opcional <code>language</code>)</td><td>Sí</td></tr>
+    <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe</code></td><td>Transcribir audio a texto con Whisper (multipart: <code>audio</code>, opcional <code>language</code>, <code>timestamps</code> = off/segment/word)</td><td>Sí</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/transcribe/status</code></td><td>Estado del modelo Whisper (cargado/descargado, dispositivo)</td><td>No</td></tr>
     <tr><td><span class="method m-post">POST</span></td><td><code>/transcribe/unload</code></td><td>Descargar el modelo Whisper y liberar memoria</td><td>Sí</td></tr>
     <tr><td><span class="method m-get">GET</span></td><td><code>/voices</code></td><td>Listar voces disponibles (alias <code>/tts/audio/voices</code>)</td><td>No</td></tr>
@@ -155,8 +157,33 @@ curl -X POST http://localhost:8001/transcribe \
 curl -X POST http://localhost:8001/transcribe \
   -H "X-API-Key: qt-tu-clave-aqui" \
   -F "audio=@/ruta/al/audio.wav" \
-  -F "language=es"</pre>
-<p>Respuesta: <code>{"status":"ok","text":"...","language":"es","duration_seconds":12.3,"model":"whisper-large-v3","device":"cuda:0"}</code></p>
+  -F "language=es"
+
+# Transcribir con marcas de tiempo por segmentos (o "word" por palabras)
+curl -X POST http://localhost:8001/transcribe \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -F "audio=@/ruta/al/audio.wav" \
+  -F "language=es" \
+  -F "timestamps=segment"</pre>
+<p>Respuesta: <code>{"status":"ok","text":"...","language":"es","duration_seconds":12.3,"model":"whisper-large-v3","device":"cuda:0","timestamps":"segment"}</code> y, según el modo, campos adicionales:</p>
+<ul>
+  <li><code>timestamps: "off"</code> (por defecto): solo <code>text</code>.</li>
+  <li><code>timestamps: "segment"</code>: añade <code>segments: [{start, end, text}, ...]</code> (segundos).</li>
+  <li><code>timestamps: "word"</code>: añade <code>segments</code> y <code>words: [{word, start, end}, ...]</code>.</li>
+</ul>
+<p>El campo <code>timestamps</code> es opcional y sobreescribe el ajuste global <code>whisper_timestamps</code> (configurable en el panel). Las marcas de palabra son una interpolación proporcional dentro de cada segmento.</p>
+
+<h2>Descarga de modelos</h2>
+<p>El servidor solo puede descargar los modelos que soporta (whitelist): los 4 TTS de Qwen3 (<code>Qwen3-TTS-12Hz-0.6B-CustomVoice</code>, <code>Qwen3-TTS-12Hz-1.7B-Base</code>, <code>Qwen3-TTS-12Hz-1.7B-CustomVoice</code>, <code>Qwen3-TTS-12Hz-1.7B-VoiceDesign</code>) y Whisper <code>whisper-large-v3</code>. Se guardan en <code>models/</code> con el nombre de directorio que el servidor usa para cargarlos. No se aceptan repos arbitrarios. Solo puede haber una descarga a la vez y corre en segundo plano.</p>
+<pre># Listar estado (instalado, descargando, error, tamaño)
+curl http://localhost:8001/models/download/status
+
+# Descargar un modelo soportado (en segundo plano)
+curl -X POST http://localhost:8001/models/download \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: qt-tu-clave-aqui" \
+  -d '{"model_id": "whisper-large-v3"}'</pre>
+<p>Respuesta: <code>{"status":"ok","started":true,"model":"whisper-large-v3","message":"..."}</code>. Consulta <code>/models/download/status</code> para ver el progreso.</p>
 
 <h2>Generar audio (Python)</h2>
 <pre>import requests

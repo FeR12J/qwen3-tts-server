@@ -406,6 +406,14 @@ footer a:hover { text-decoration:underline; }
         <label for="transcribeLang" style="margin-top:10px">Idioma (vacío = auto)</label>
         <input type="text" id="transcribeLang" placeholder="auto, es, en, fr...">
       </div>
+      <div>
+        <label for="transcribeTimestamps" style="margin-top:10px">Marcas de tiempo</label>
+        <select id="transcribeTimestamps">
+          <option value="off">Desactivadas</option>
+          <option value="segment">Segmentos</option>
+          <option value="word">Palabras</option>
+        </select>
+      </div>
     </div>
     <div class="row" style="margin-top:14px">
       <button class="btn-primary" id="btnTranscribe" onclick="transcribeAudio()">Transcribir</button>
@@ -441,6 +449,10 @@ footer a:hover { text-decoration:underline; }
         <button class="tab" id="tabBtn-keys" onclick="switchTab('keys')">
           <svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
           Claves API
+        </button>
+        <button class="tab" id="tabBtn-models" onclick="switchTab('models')">
+          <svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          Modelos
         </button>
       </div>
 
@@ -641,6 +653,15 @@ footer a:hover { text-decoration:underline; }
             <select id="cfgUnloadWhisperForTts"><option value="true">Sí</option><option value="false">No</option></select>
           </div>
         </div>
+        <div style="margin-top:10px">
+          <label for="cfgWhisperTimestamps">Transcripción: marcas de tiempo (por defecto)</label>
+          <select id="cfgWhisperTimestamps">
+            <option value="off">Desactivadas (solo texto)</option>
+            <option value="segment">Segmentos (inicio/fin por frase)</option>
+            <option value="word">Palabras (inicio/fin por palabra)</option>
+          </select>
+          <div class="hint">Se puede sobreescribir por petición con el campo <code>timestamps</code> de <code>/transcribe</code>.</div>
+        </div>
         <label for="cfgInstruct">Instrucción de voz por defecto</label>
         <textarea id="cfgInstruct" style="min-height:60px"></textarea>
         <div class="row" style="margin-top:16px">
@@ -683,6 +704,12 @@ footer a:hover { text-decoration:underline; }
           <tbody id="keysBody"><tr><td colspan="6" class="status">Cargando...</td></tr></tbody>
         </table>
       </div>
+
+      <!-- Pestaña modelos -->
+      <div class="tab-panel" id="panel-models">
+        <div class="hint" style="margin-bottom:12px">Descarga los modelos soportados por el servidor (solo estos, nunca repos arbitrarios). Se guardan en <code>models/</code> y aparecen en la tabla de gestión al terminar. Solo puede haber una descarga a la vez.</div>
+        <div id="modelsList" class="status">Cargando...</div>
+      </div>
     </div>
   </div>
 </div>
@@ -723,6 +750,64 @@ async function api(url, opts = {}) {
 async function apiJson(url, opts = {}) {
   const res = await api(url, opts);
   return res.json();
+}
+
+/* ---------- Descarga de modelos ---------- */
+function fmtSize(bytes) {
+  if (!bytes && bytes !== 0) return '—';
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return gb.toFixed(2) + ' GB';
+  return (bytes / (1024 * 1024)).toFixed(0) + ' MB';
+}
+
+function modelRow(m) {
+  const st = m.status || 'idle';
+  const installed = !!m.installed;
+  let chip = '<span class="badge off">no instalado</span>';
+  if (installed) chip = '<span class="badge ok">instalado</span>';
+  if (st === 'downloading') chip = '<span class="badge">descargando...</span>';
+  if (st === 'error') chip = '<span class="badge" style="color:var(--err);border-color:rgba(248,113,113,.4)">error</span>';
+
+  let btn = '<button class="btn-primary" onclick="downloadModel(' + JSON.stringify(m.name) + ')">Descargar</button>';
+  if (installed || st === 'downloading') btn = '—';
+
+  const errHtml = m.error ? '<div class="hint" style="color:var(--err)">' + m.error.replace(/</g, '&lt;') + '</div>' : '';
+  return '<div style="display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border)">' +
+    '<div style="flex:1;min-width:0">' +
+      '<b>' + m.name + '</b> ' +
+      '<span class="badge off">' + m.kind + '</span>' +
+      '<div class="hint" style="margin-top:2px">' + m.description + '</div>' +
+      '<div class="hint">' + m.repo_id + ' · ' + fmtSize(m.size_bytes) + '</div>' +
+      errHtml +
+    '</div>' +
+    '<div style="text-align:right">' + chip + '<div style="margin-top:8px">' + btn + '</div></div>' +
+  '</div>';
+}
+
+async function loadModelsTab() {
+  const el = $('modelsList');
+  try {
+    const d = await apiJson('/models/download/status');
+    const downloading = d.models.some(m => m.status === 'downloading');
+    el.className = '';
+    el.innerHTML = d.models.map(modelRow).join('');
+    if (downloading) setTimeout(loadModelsTab, 3000);
+  } catch (e) {
+    el.className = 'status';
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function downloadModel(name) {
+  try {
+    const d = await apiJson('/models/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_id: name }),
+    });
+    toast(d.message || 'Descarga iniciada: ' + name);
+    loadModelsTab();
+  } catch (e) { toast('Error: ' + e.message, false); }
 }
 
 /* ---------- Estado ---------- */
@@ -1022,8 +1107,11 @@ function closeSettings() { $('modalConfig').classList.remove('open'); }
 function switchTab(name) {
   $('tabBtn-config').classList.toggle('active', name === 'config');
   $('tabBtn-keys').classList.toggle('active', name === 'keys');
+  $('tabBtn-models').classList.toggle('active', name === 'models');
   $('panel-config').classList.toggle('active', name === 'config');
   $('panel-keys').classList.toggle('active', name === 'keys');
+  $('panel-models').classList.toggle('active', name === 'models');
+  if (name === 'models') loadModelsTab();
 }
 $('modalConfig').addEventListener('click', (e) => { if (e.target === $('modalConfig')) closeSettings(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
@@ -1067,6 +1155,8 @@ async function loadConfig() {
     $('cfgSaveAudios').value = String(c.save_audios !== false);
     $('cfgUnloadTtsForWhisper').value = String(c.unload_tts_for_whisper);
     $('cfgUnloadWhisperForTts').value = String(c.unload_whisper_for_tts);
+    $('cfgWhisperTimestamps').value = c.whisper_timestamps || 'off';
+    $('transcribeTimestamps').value = $('cfgWhisperTimestamps').value;
     $('cfgChunking').value = c.chunking || 'sentence';
     $('cfgNormalize').value = String(c.normalize_reference_audio !== false);
     $('cfgDbfs').value = c.normalization_dbfs;
@@ -1110,6 +1200,7 @@ async function saveConfig() {
     save_audios: $('cfgSaveAudios').value === 'true',
     unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',
     unload_whisper_for_tts: $('cfgUnloadWhisperForTts').value === 'true',
+    whisper_timestamps: $('cfgWhisperTimestamps').value,
     device: $('cfgDevice').value,
     chunking: $('cfgChunking').value,
     normalize_reference_audio: $('cfgNormalize').value === 'true',
@@ -1222,17 +1313,38 @@ async function transcribeAudio() {
   fd.append('audio', file);
   const lang = $('transcribeLang').value.trim();
   if (lang) fd.append('language', lang);
+  fd.append('timestamps', $('transcribeTimestamps').value);
 
   const btn = $('btnTranscribe');
   btn.disabled = true; btn.textContent = 'Transcribiendo...';
   $('transcribeStatus').textContent = 'La primera transcripción tarda (carga el modelo)...';
   try {
     const d = await apiJson('/transcribe', { method: 'POST', body: fd });
-    $('transcribeResult').value = d.text;
-    $('transcribeStatus').textContent = 'Idioma: ' + d.language + ' · duración: ' + d.duration_seconds + ' s · ' + d.device;
+    $('transcribeResult').value = formatTranscription(d);
+    $('transcribeStatus').textContent = 'Idioma: ' + d.language + ' · duración: ' + d.duration_seconds +
+      ' s · ' + d.device + (d.timestamps !== 'off' ? ' · marcas: ' + d.timestamps : '');
     loadWhisperStatus();
   } catch (e) { toast('Error: ' + e.message, false); }
   finally { btn.disabled = false; btn.textContent = 'Transcribir'; }
+}
+
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = (sec % 60).toFixed(2).padStart(5, '0');
+  return m + ':' + s;
+}
+
+function formatTranscription(d) {
+  if (!d.segments) return d.text;
+  const lines = d.segments.map(seg =>
+    '[' + fmtTime(seg.start) + ' - ' + fmtTime(seg.end) + '] ' + seg.text
+  );
+  if (d.words && d.words.length) {
+    const w = d.words.map(w => w.word + '(' + fmtTime(w.start) + '-' + fmtTime(w.end) + ')').join(' ');
+    lines.push('');
+    lines.push('Palabras: ' + w);
+  }
+  return lines.join('\n');
 }
 
 async function unloadWhisper() {

@@ -14,3 +14,4 @@ class WhisperStatusResponse(BaseModel):
     model_loaded: bool
     model: str
     device: str
+    timestamps: str = "off"

@@ -244,6 +244,12 @@ class RuntimeSettings(BaseModel):
     # Gestión de VRAM compartida TTS <-> Whisper (GPUs pequeñas)
     unload_tts_for_whisper: bool = True
     unload_whisper_for_tts: bool = True
+    # Marcas de tiempo en las transcripciones Whisper:
+    #   "off"     -> solo texto (comportamiento por defecto)
+    #   "segment" -> segmentos con inicio/fin y texto
+    #   "word"    -> segmentos + palabras con inicio/fin
+    # Se puede sobreescribir por petición con el campo 'timestamps' de /transcribe.
+    whisper_timestamps: str = "off"
 
     # --- Ajustes heredados de los grupos estáticos (editables en el panel) ---
 

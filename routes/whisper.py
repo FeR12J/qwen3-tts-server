@@ -27,11 +27,20 @@ def create_whisper_routes(app: FastAPI, ctx):
     async def transcribe_endpoint(
         audio: Optional[UploadFile] = File(None),
         language: Optional[str] = Form(None),
+        timestamps: Optional[str] = Form(None),
     ):
         # Regla arquitectónica: validación SIEMPRE antes de adquirir el
         # inference_lock (la GPU nunca se bloquea validando input).
         if audio is None or not audio.filename:
             raise InvalidAudioError("Archivo de audio requerido (campo 'audio')")
+
+        if timestamps is not None and timestamps not in whisper_service.VALID_TIMESTAMP_MODES:
+            raise HTTPException(
+                400,
+                "timestamps inválido. Válidos: "
+                + ", ".join(whisper_service.VALID_TIMESTAMP_MODES)
+                + " (vacío = ajuste configurado)",
+            )
 
         data = await audio.read()
         sl = get_limits()
@@ -55,7 +64,9 @@ def create_whisper_routes(app: FastAPI, ctx):
             await prepare_for_whisper(ctx.models, ctx.voices, whisper_service)
 
             try:
-                result = await whisper_service.transcribe(data, language)
+                result = await whisper_service.transcribe(
+                    data, language, timestamps=timestamps
+                )
                 logger.info(f"Transcripción completada ({result['language']}, {result['duration_seconds']}s)")
                 return {"status": "ok", **result}
             except FileNotFoundError as e:

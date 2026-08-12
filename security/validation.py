@@ -78,6 +78,10 @@ def validate_config_update(changes: dict, config_service):
         )
     if "chunking" in changes and changes["chunking"] not in ("sentence", "paragraph"):
         raise HTTPException(400, "chunking inválido. Válidos: sentence, paragraph")
+    if "whisper_timestamps" in changes and changes["whisper_timestamps"] not in (
+        "off", "segment", "word"
+    ):
+        raise HTTPException(400, "whisper_timestamps inválido. Válidos: off, segment, word")
     if "normalization_dbfs" in changes and (
         changes["normalization_dbfs"] is None
         or not isinstance(changes["normalization_dbfs"], (int, float))

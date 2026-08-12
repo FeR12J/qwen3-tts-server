@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from config.settings import settings
 from routes.models import create_models_routes
 
 
@@ -175,3 +176,71 @@ def test_model_unload_not_loaded_is_noop(client):
     res = tc.post("/model/unload", json={"model_id": "otro-modelo-local"})
     assert res.status_code == 200
     assert "no estaba cargado" in res.json()["message"]
+
+
+# -- Descarga de modelos (whitelist) ------------------------------------------
+
+
+@pytest.fixture
+def download_env(monkeypatch, tmp_path):
+    """Sin red: models_dir temporal, stub de snapshot y estado limpio."""
+    import services.model_downloader as md
+
+    d = tmp_path / "models"
+    d.mkdir()
+    monkeypatch.setattr(settings.paths, "models_dir", str(d))
+    md._STATE.clear()
+    def stub_snapshot(model):
+        t = d / model["name"]
+        t.mkdir(exist_ok=True)
+        (t / "model.safetensors").write_bytes(b"x" * 16)
+
+    monkeypatch.setattr(md, "_snapshot_download", stub_snapshot)
+    return d
+
+
+def test_download_status_public(client):
+    tc, _, _ = client
+    res = tc.get("/models/download/status")
+    assert res.status_code == 200
+    models = res.json()["models"]
+    names = {m["name"] for m in models}
+    assert "Qwen3-TTS-12Hz-1.7B-VoiceDesign" in names
+    assert "whisper-large-v3" in names
+    assert all("repo_id" in m and "installed" in m for m in models)
+
+
+def test_download_whitelist_rejects_unknown(client, download_env):
+    tc, _, _ = client
+    res = tc.post("/models/download", json={"model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"})
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "MODEL_NOT_SUPPORTED"
+
+
+def test_download_starts_and_tracks_state(client, download_env):
+    import asyncio
+
+    import services.model_downloader as md
+
+    tc, _, _ = client
+    res = tc.post("/models/download", json={"model_id": "whisper-large-v3"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "ok"
+    assert body["started"] is True
+
+    # El loop del TestClient puede cerrarse antes de que la tarea en segundo
+    # plano marque el estado; forzar la finalización si sigue pendiente.
+    if md._STATE["whisper-large-v3"]["status"] == "downloading":
+        asyncio.run(md._run_download(md.SUPPORTED_BY_NAME["whisper-large-v3"]))
+
+    res = tc.get("/models/download/status")
+    by_name = {m["name"]: m for m in res.json()["models"]}
+    assert by_name["whisper-large-v3"]["installed"] is True
+    assert by_name["whisper-large-v3"]["status"] == "done"
+
+
+def test_download_invalid_id(client, download_env):
+    tc, _, _ = client
+    res = tc.post("/models/download", json={"model_id": "  "})
+    assert res.status_code == 400
