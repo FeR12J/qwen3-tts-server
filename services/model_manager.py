@@ -14,9 +14,15 @@ import torch
 from qwen_tts import Qwen3TTSModel
 
 from config.settings import settings
-from services.config_service import validated_device, validated_dtype
+from services.config_service import validated_device, validated_dtype, get_runtime_config
 
 logger = logging.getLogger("tts")
+
+
+def _flash_attn_available() -> bool:
+    """¿Está instalado el paquete flash-attn?"""
+    import importlib.util
+    return importlib.util.find_spec("flash_attn") is not None
 
 
 class ModelState(str, Enum):
@@ -315,10 +321,29 @@ class ModelManager:
                 device = validated_device()
                 dtype = validated_dtype()
                 logger.info(f"Cargando en dispositivo: {device} (dtype: {dtype})")
+                kwargs = {}
+                if get_runtime_config().get("flash_attn", False):
+                    if not device.startswith("cuda:"):
+                        # flash-attn solo aplica en GPU; degradar con aviso
+                        # claro en vez de fallar silenciosamente.
+                        logger.warning(
+                            "flash_attn activado pero el dispositivo es CPU: se usa "
+                            "la atención por defecto de la librería"
+                        )
+                    elif _flash_attn_available():
+                        kwargs["attn_implementation"] = "flash_attention_2"
+                        logger.info("flash_attn: usando Flash Attention 2")
+                    else:
+                        raise RuntimeError(
+                            "flash_attn activado pero el paquete 'flash-attn' no está "
+                            "instalado. Instálalo con: pip install flash-attn "
+                            "(o desactiva flash_attn en el panel)"
+                        )
                 model = Qwen3TTSModel.from_pretrained(
                     model_path,
                     device_map=device,
                     dtype=dtype,
+                    **kwargs,
                 )
                 return model, device, dtype
 

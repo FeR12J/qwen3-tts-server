@@ -142,6 +142,6 @@ def validate_config_update(changes: dict, config_service):
         raise HTTPException(400, "max_channels debe estar entre 1 y 8")
     for flag in ("unload_tts_for_whisper", "unload_whisper_for_tts",
                  "streaming_enabled", "save_audios", "normalize_reference_audio",
-                 "queue_enabled", "log_input_text"):
+                 "queue_enabled", "log_input_text", "flash_attn"):
         if flag in changes and not isinstance(changes[flag], bool):
             raise HTTPException(400, f"{flag} debe ser true o false")

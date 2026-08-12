@@ -1,0 +1,72 @@
+[
+  {
+    "benchmark": "C-streaming",
+    "model": "Qwen3-TTS-12Hz-1.7B-Base",
+    "mode": "normal",
+    "samples": [
+      {
+        "ok": true,
+        "bytes": 180524,
+        "audio_duration_s": 3.76,
+        "total_ms": 2482.5,
+        "ttfb_ms": 2481.8,
+        "rtf": 0.66,
+        "vram_used_gb": 8.084,
+        "vram_before_gb": 8.084,
+        "peak_ram_gb": 0.0,
+        "error": null,
+        "text": "es_short_01",
+        "category": "short"
+      },
+      {
+        "ok": true,
+        "bytes": 192044,
+        "audio_duration_s": 4.0,
+        "total_ms": 2460.1,
+        "ttfb_ms": 2459.3,
+        "rtf": 0.615,
+        "vram_used_gb": 8.084,
+        "vram_before_gb": 8.084,
+        "peak_ram_gb": 0.0,
+        "error": null,
+        "text": "en_short_01",
+        "category": "short"
+      }
+    ]
+  },
+  {
+    "benchmark": "C-streaming",
+    "model": "Qwen3-TTS-12Hz-1.7B-Base",
+    "mode": "stream",
+    "samples": [
+      {
+        "ok": true,
+        "bytes": 188204,
+        "audio_duration_s": 3.92,
+        "total_ms": 2459.0,
+        "ttfb_ms": 2457.8,
+        "rtf": 0.627,
+        "vram_used_gb": 8.098,
+        "vram_before_gb": 8.084,
+        "peak_ram_gb": 0.0,
+        "error": null,
+        "text": "es_short_01",
+        "category": "short"
+      },
+      {
+        "ok": true,
+        "bytes": 218924,
+        "audio_duration_s": 4.56,
+        "total_ms": 2833.7,
+        "ttfb_ms": 2833.0,
+        "rtf": 0.621,
+        "vram_used_gb": 8.088,
+        "vram_before_gb": 8.098,
+        "peak_ram_gb": 0.0,
+        "error": null,
+        "text": "en_short_01",
+        "category": "short"
+      }
+    ]
+  }
+]

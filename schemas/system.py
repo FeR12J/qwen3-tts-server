@@ -19,6 +19,7 @@ class ConfigUpdate(BaseModel):
     save_audios: Optional[bool] = None
     device: Optional[str] = None
     dtype: Optional[str] = None
+    flash_attn: Optional[bool] = None
     unload_tts_for_whisper: Optional[bool] = None
     unload_whisper_for_tts: Optional[bool] = None
     chunking: Optional[str] = None

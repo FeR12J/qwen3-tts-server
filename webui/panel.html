@@ -495,6 +495,14 @@ footer a:hover { text-decoration:underline; }
             <div class="hint">Se aplica al cargar el modelo.</div>
           </div>
           <div>
+            <label for="cfgFlashAttn">Flash Attention 2</label>
+            <select id="cfgFlashAttn">
+              <option value="false">Desactivada (por defecto)</option>
+              <option value="true">Activada (requiere flash-attn + GPU)</option>
+            </select>
+            <div class="hint">Acelera la atención en GPU. Requiere <code>pip install flash-attn</code>. Se aplica al cargar el modelo.</div>
+          </div>
+          <div>
             <label for="cfgLogLevel">Nivel de logging</label>
             <select id="cfgLogLevel">
               <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
@@ -1052,6 +1060,7 @@ async function loadConfig() {
     $('cfgInstruct').value = c.def_instruct || '';
     $('cfgLogLevel').value = c.log_level;
     $('cfgDtype').value = c.dtype || 'auto';
+    $('cfgFlashAttn').value = String(c.flash_attn === true);
     $('cfgLogRequests').value = String(c.log_requests);
     $('cfgLogInputText').value = String(c.log_input_text === true);
     $('cfgStreaming').value = String(c.streaming_enabled !== false);
@@ -1094,6 +1103,7 @@ async function saveConfig() {
     def_instruct: $('cfgInstruct').value,
     log_level: $('cfgLogLevel').value,
     dtype: $('cfgDtype').value,
+    flash_attn: $('cfgFlashAttn').value === 'true',
     log_requests: $('cfgLogRequests').value === 'true',
     log_input_text: $('cfgLogInputText').value === 'true',
     streaming_enabled: $('cfgStreaming').value === 'true',

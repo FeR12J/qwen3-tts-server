@@ -238,6 +238,9 @@ class RuntimeSettings(BaseModel):
     device: str = "auto"
     # dtype: "auto" (según GPU), "bfloat16", "float16" o "float32"
     dtype: str = "auto"
+    # Implementación de atención: Flash Attention 2 (requiere GPU y el
+    # paquete flash-attn instalado). Desactivado = default de la librería.
+    flash_attn: bool = False
     # Gestión de VRAM compartida TTS <-> Whisper (GPUs pequeñas)
     unload_tts_for_whisper: bool = True
     unload_whisper_for_tts: bool = True
