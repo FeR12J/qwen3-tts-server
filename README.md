@@ -128,8 +128,8 @@ El repositorio incluye los datos y resultados del benchmark. Para conocer la met
 
 - **PUBLIC** (`/health`, `/version`, estado y listados): sin autenticación.
 - **PROTECTED** (`/tts/*`, `/transcribe`): dependencia `require_api_key()`; exige `X-API-Key: qt-...` (o `Authorization: Bearer qt-...`) solo cuando la exigencia global de claves está activada (panel o `QWEN_TTS_REQUIRE_API_KEY=true`).
-- **ADMIN** (`/model/*`, `/voice/*`, `/apikeys/*`, `/config/*`): dependencia `require_admin()`; exige **siempre** una clave API válida, esté o no activada la exigencia global, de modo que las operaciones administrativas no quedan accesibles sin autenticación.
-- **Bootstrap**: si aún no existe ninguna clave, las operaciones ADMIN quedan abiertas para permitir crear la primera clave desde el panel. A partir de la primera clave, todas las operaciones ADMIN exigen autenticación.
+- **ADMIN** (`/model/*`, `/voice/*`, `/apikeys/*`, `/config/*`): dependencia `require_admin()`; exige clave válida solo cuando la exigencia global está activada. Si `Exigir clave API` está desactivado, **ningún endpoint** (incluidos los administrativos) pide clave.
+- **Bootstrap**: si la exigencia global está activada pero aún no existe ninguna clave, las operaciones ADMIN quedan abiertas para permitir crear la primera clave desde el panel. A partir de la primera clave, las operaciones ADMIN exigen autenticación.
 
 ## Claves API
 

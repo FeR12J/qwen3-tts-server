@@ -89,6 +89,9 @@ main { max-width:1060px; margin:0 auto; padding:28px 24px; display:grid; gap:20p
 }
 .card-title .ic svg { width:16px; height:16px; fill:currentColor; }
 .card-sub { font-size:12.5px; color:var(--dim); margin-bottom:16px; }
+.config-card { margin-bottom:16px; }
+.sub-label { font-size:11px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin:16px 0 0; grid-column:1/-1; }
+.sub-label:first-child { margin-top:0; }
 
 /* ---------- Hero (probar TTS) ---------- */
 .hero {
@@ -146,8 +149,13 @@ th { color:var(--dim); font-weight:500; font-size:11.5px; letter-spacing:.5px; t
 tr:hover td { background:rgba(255,255,255,.02); }
 
 .hint { font-size:12px; color:var(--dim); margin-top:6px; }
-.hint code, p code { background:rgba(255,255,255,.06); padding:1px 6px; border-radius:5px; font-size:12px; }
-.section-title { font-size:13px; font-weight:600; color:var(--accent); border-top:1px solid var(--border); padding-top:14px; margin:20px 0 10px; letter-spacing:.2px; }
+.config-load-error {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.4);
+  border-radius:12px; padding:12px 14px; margin-bottom:16px;
+  font-size:13px; color:var(--err);
+}
+
 
 /* ---------- Dashboard ---------- */
 .stat-row {
@@ -458,191 +466,76 @@ footer a:hover { text-decoration:underline; }
 
       <!-- Pestaña configuración -->
       <div class="tab-panel active" id="panel-config">
-        <div class="grid2">
-          <div>
-            <label for="cfgMaxChars">Tamaño de fragmento por generación (chunk)</label>
-            <input type="number" id="cfgMaxChars" min="1">
-            <div class="hint">Trade-off calidad &lt;-&gt; latencia &lt;-&gt; VRAM. Más grande: mejor consistencia de voz; más pequeño: primer audio antes y menos VRAM.</div>
-          </div>
-          <div>
-            <label for="cfgMaxTextCharacters">Límite máximo de texto por petición</label>
-            <input type="number" id="cfgMaxTextCharacters" min="1">
-            <div class="hint">Longitud máxima del texto de entrada (caracteres).</div>
-          </div>
-          <div>
-            <label for="cfgPlaybackTimeout">Timeout de reproducción local (s)</label>
-            <input type="number" id="cfgPlaybackTimeout" min="1">
-          </div>
-          <div>
-            <label for="cfgLang">Idioma por defecto</label>
-            <input type="text" id="cfgLang">
-          </div>
-          <div>
-            <label for="cfgVoice">Speaker por defecto</label>
-            <input type="text" id="cfgVoice">
-          </div>
-          <div>
-            <label for="cfgChunking">División de textos largos</label>
-            <select id="cfgChunking">
-              <option value="sentence">Por frases (sentence)</option>
-              <option value="paragraph">Por párrafos (paragraph)</option>
-            </select>
-          </div>
-          <div>
-            <label for="cfgDevice">Dispositivo de inferencia</label>
-            <select id="cfgDevice">
-              <option value="auto">Auto (GPU si está disponible)</option>
-              <option value="cpu">CPU</option>
-            </select>
-            <div class="hint" id="cfgDeviceHint">Se aplica al cargar el modelo.</div>
-          </div>
-          <div>
-            <label for="cfgDtype">Precisión del modelo</label>
-            <select id="cfgDtype">
-              <option value="auto">Auto (bfloat16 en GPU, float32 en CPU)</option>
-              <option value="bfloat16">bfloat16</option>
-              <option value="float16">float16</option>
-              <option value="float32">float32</option>
-            </select>
-            <div class="hint">Se aplica al cargar el modelo.</div>
-          </div>
-          <div>
-            <label for="cfgFlashAttn">Flash Attention 2</label>
-            <select id="cfgFlashAttn">
-              <option value="false">Desactivada (por defecto)</option>
-              <option value="true">Activada (requiere flash-attn + GPU)</option>
-            </select>
-            <div class="hint">Acelera la atención en GPU. Requiere <code>pip install flash-attn</code>. Se aplica al cargar el modelo.</div>
-          </div>
-          <div>
-            <label for="cfgLogLevel">Nivel de logging</label>
-            <select id="cfgLogLevel">
-              <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
-            </select>
-          </div>
-          <div>
-            <label for="cfgLogRequests">Registrar peticiones en requests.log</label>
-            <select id="cfgLogRequests"><option value="true">Sí</option><option value="false">No</option></select>
-          </div>
-          <div>
-            <label for="cfgLogInputText">Registrar el texto enviado al TTS</label>
-            <select id="cfgLogInputText"><option value="false">No (privacidad: solo text_length)</option><option value="true">Sí (texto truncado)</option></select>
-            <div class="hint">Desactivado por defecto: solo se registra la longitud del texto, no su contenido.</div>
-          </div>
-          <div>
-            <label for="cfgStreaming">Streaming en <code>/tts/stream</code></label>
-            <select id="cfgStreaming"><option value="true">Sí</option><option value="false">No</option></select>
-          </div>
-          <div>
-            <label for="cfgSaveAudios">Guardar audios en <code>audios/</code></label>
-            <select id="cfgSaveAudios"><option value="true">Sí</option><option value="false">No</option></select>
-          </div>
-          <div>
-            <label for="cfgParallel">Inferencias GPU simultáneas</label>
-            <input type="number" id="cfgParallel" min="1" max="16">
-            <div class="hint">Se aplica al reiniciar el servidor (la cola se crea en el arranque).</div>
-          </div>
-          <div>
-            <label for="cfgQueueEnabled">Cola interna de inferencia</label>
-            <select id="cfgQueueEnabled"><option value="true">Activada</option><option value="false">Desactivada</option></select>
-            <div class="hint">HTTP -&gt; cola FIFO -&gt; worker GPU. Se aplica al reiniciar.</div>
-          </div>
-          <div>
-            <label for="cfgQueueMaxSize">Peticiones máx. en espera en la cola</label>
-            <input type="number" id="cfgQueueMaxSize" min="1" max="100">
-            <div class="hint">Si la cola está llena se responde 429. Se aplica al reiniciar.</div>
-          </div>
-          <div>
-            <label for="cfgTtl">Vida máxima de audios generados (horas)</label>
-            <input type="number" id="cfgTtl" min="0.1" step="1">
-            <div class="hint">La limpieza automática de <code>audios/</code> elimina los más antiguos.</div>
-          </div>
-          <div>
-            <label for="cfgPort">Puerto HTTP del servidor</label>
-            <input type="number" id="cfgPort" min="1" max="65535">
-            <div class="hint">Se aplica al reiniciar el servidor.</div>
-          </div>
+        <div id="configLoadError" class="config-load-error" style="display:none">
+          <b>No se pudo cargar la configuración.</b>
+          <span id="configLoadErrorMsg"></span>
+          <button type="button" class="btn-sm btn-primary" onclick="gotoKeys()">Introducir clave</button>
         </div>
 
-        <div class="section-title">CORS</div>
-        <div class="grid2">
-          <div>
-            <label for="cfgCorsEnabled">Permitir peticiones de otros orígenes</label>
-            <select id="cfgCorsEnabled"><option value="false">Desactivado</option><option value="true">Activado</option></select>
-            <div class="hint">Se aplica en la siguiente petición, sin reiniciar.</div>
+        <!-- 1. Generación (TTS) -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M3 12h3l2-5 4 12 3-7 2 2h4"/></svg></div>Generación (TTS)</div>
+          <div class="card-sub">Cómo se divide y procesa el texto antes de sintetizar, y los valores por defecto de cada petición.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgMaxChars">Tamaño de fragmento por generación (chunk)</label>
+              <input type="number" id="cfgMaxChars" min="1">
+              <div class="hint">Trade-off calidad &lt;-&gt; latencia &lt;-&gt; VRAM. Más grande: mejor consistencia de voz; más pequeño: primer audio antes y menos VRAM.</div>
+            </div>
+            <div>
+              <label for="cfgMaxTextCharacters">Límite máximo de texto por petición</label>
+              <input type="number" id="cfgMaxTextCharacters" min="1">
+              <div class="hint">Longitud máxima del texto de entrada (caracteres).</div>
+            </div>
+            <div>
+              <label for="cfgLang">Idioma por defecto</label>
+              <input type="text" id="cfgLang">
+            </div>
+            <div>
+              <label for="cfgVoice">Speaker por defecto</label>
+              <input type="text" id="cfgVoice">
+            </div>
+            <div>
+              <label for="cfgChunking">División de textos largos</label>
+              <select id="cfgChunking">
+                <option value="sentence">Por frases (sentence)</option>
+                <option value="paragraph">Por párrafos (paragraph)</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label for="cfgCorsAllowWildcard">Permitir todos los orígenes (<code>*</code>)</label>
-            <select id="cfgCorsAllowWildcard"><option value="false">No</option><option value="true">Sí</option></select>
-            <div class="hint">Responde <code>Access-Control-Allow-Origin: *</code> a cualquier origen. Desactivado por defecto.</div>
-          </div>
-          <div>
-            <label for="cfgCorsOrigins">Orígenes permitidos (separados por coma)</label>
-            <input type="text" id="cfgCorsOrigins" placeholder="http://localhost:3000">
-            <div class="hint">Ej: <code>http://localhost:3000, http://192.168.1.10:5173</code></div>
-          </div>
-        </div>
+          <label for="cfgInstruct">Instrucción de voz por defecto</label>
+          <textarea id="cfgInstruct" style="min-height:60px"></textarea>
+        </section>
 
-        <div class="section-title">Límites de entrada (audio subido)</div>
-        <div class="grid2">
-          <div>
-            <label for="cfgMaxRefAudioMb">Audio de referencia: tamaño máx. (MB)</label>
-            <input type="number" id="cfgMaxRefAudioMb" min="1">
+        <!-- 2. Salida de audio -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg></div>Salida de audio</div>
+          <div class="card-sub">Qué se hace con los audios generados: streaming, conservación y limpieza automática.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgStreaming">Streaming en <code>/tts/stream</code></label>
+              <select id="cfgStreaming"><option value="true">Sí</option><option value="false">No</option></select>
+            </div>
+            <div>
+              <label for="cfgSaveAudios">Guardar audios en <code>audios/</code></label>
+              <select id="cfgSaveAudios"><option value="true">Sí</option><option value="false">No</option></select>
+            </div>
+            <div>
+              <label for="cfgPlaybackTimeout">Timeout de reproducción local (s)</label>
+              <input type="number" id="cfgPlaybackTimeout" min="1">
+            </div>
+            <div>
+              <label for="cfgTtl">Vida máxima de audios generados (horas)</label>
+              <input type="number" id="cfgTtl" min="0.1" step="1">
+              <div class="hint">La limpieza automática de <code>audios/</code> elimina los más antiguos.</div>
+            </div>
           </div>
-          <div>
-            <label for="cfgMaxRefDuration">Audio de referencia: duración máx. (s)</label>
-            <input type="number" id="cfgMaxRefDuration" min="1">
-          </div>
-          <div>
-            <label for="cfgMaxEstDuration">Duración estimada máx. del audio generado (s)</label>
-            <input type="number" id="cfgMaxEstDuration" min="1">
-            <div class="hint">Heurística (~16 caracteres/segundo), no la duración real.</div>
-          </div>
-          <div>
-            <label for="cfgMaxVoiceBytesMb">Audio de voz nueva: tamaño máx. (MB)</label>
-            <input type="number" id="cfgMaxVoiceBytesMb" min="1">
-          </div>
-          <div>
-            <label for="cfgMaxVoiceDuration">Audio de voz nueva: duración máx. (s)</label>
-            <input type="number" id="cfgMaxVoiceDuration" min="1">
-          </div>
-          <div>
-            <label for="cfgMaxTranscribeBytesMb">Audio a transcribir: tamaño máx. (MB)</label>
-            <input type="number" id="cfgMaxTranscribeBytesMb" min="1">
-          </div>
-          <div>
-            <label for="cfgMaxTranscribeDuration">Audio a transcribir: duración máx. (s)</label>
-            <input type="number" id="cfgMaxTranscribeDuration" min="1">
-          </div>
-          <div>
-            <label for="cfgMinSampleRate">Sample rate mínimo (Hz)</label>
-            <input type="number" id="cfgMinSampleRate" min="1000" max="384000">
-          </div>
-          <div>
-            <label for="cfgMaxSampleRate">Sample rate máximo (Hz)</label>
-            <input type="number" id="cfgMaxSampleRate" min="1000" max="384000">
-          </div>
-          <div>
-            <label for="cfgMaxChannels">Canales máximo admitidos</label>
-            <input type="number" id="cfgMaxChannels" min="1" max="8">
-          </div>
-        </div>
+        </section>
 
-        <div class="section-title">Audio de referencia (clonación de voz)</div>
-        <div class="grid2">
-          <div>
-            <label for="cfgNormalize">Normalizar pico de amplitud</label>
-            <select id="cfgNormalize"><option value="true">Sí</option><option value="false">No</option></select>
-            <div class="hint">&laquo;No&raquo; preserva exactamente la dinámica original del archivo.</div>
-          </div>
-          <div>
-            <label for="cfgDbfs">Nivel de pico objetivo (dBFS)</label>
-            <input type="number" id="cfgDbfs" min="-60" max="0" step="0.5">
-            <div class="hint">Valor &le; 0 (ej: -1 = -1 dBFS, margen de seguridad estándar).</div>
-          </div>
-        </div>
-
-        <div style="margin-top:12px">
+        <!-- 3. Transcripción (Whisper) -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/></svg></div>Transcripción (Whisper)</div>
+          <div class="card-sub">Reconocimiento de voz: modelo a usar, marcas de tiempo y gestión de VRAM compartida.</div>
           <label for="cfgWhisperModel">Modelo de transcripción Whisper</label>
           <select id="cfgWhisperModel">
             <option value="whisper-small">whisper-small (244M)</option>
@@ -650,30 +543,205 @@ footer a:hover { text-decoration:underline; }
             <option value="whisper-large-v3">whisper-large-v3 (1550M)</option>
           </select>
           <div class="hint">El cambio se aplica al guardar: si Whisper está cargado se descarga y la próxima transcripción carga el modelo elegido. Los modelos sin descargar aparecen deshabilitados (descárgalos en la pestaña <b>Modelos</b>).</div>
-        </div>
-        <div class="hint" style="margin:12px 0 4px">Gestión de VRAM compartida TTS &lt;-&gt; Whisper (GPUs pequeñas). En GPUs grandes, pon ambos en &laquo;No&raquo; para mantener los dos modelos cargados.</div>
-        <div class="row" style="gap:14px; align-items:flex-start">
-          <div style="flex:1">
-            <label for="cfgUnloadTtsForWhisper">Descargar TTS antes de Whisper</label>
-            <select id="cfgUnloadTtsForWhisper"><option value="true">Sí</option><option value="false">No</option></select>
-          </div>
-          <div style="flex:1">
-            <label for="cfgUnloadWhisperForTts">Descargar Whisper antes de TTS</label>
-            <select id="cfgUnloadWhisperForTts"><option value="true">Sí</option><option value="false">No</option></select>
-          </div>
-        </div>
-        <div style="margin-top:10px">
-          <label for="cfgWhisperTimestamps">Transcripción: marcas de tiempo (por defecto)</label>
+          <label for="cfgWhisperTimestamps">Marcas de tiempo (por defecto)</label>
           <select id="cfgWhisperTimestamps">
             <option value="off">Desactivadas (solo texto)</option>
             <option value="segment">Segmentos (inicio/fin por frase)</option>
             <option value="word">Palabras (inicio/fin por palabra)</option>
           </select>
           <div class="hint">Se puede sobreescribir por petición con el campo <code>timestamps</code> de <code>/transcribe</code>.</div>
-        </div>
-        <label for="cfgInstruct">Instrucción de voz por defecto</label>
-        <textarea id="cfgInstruct" style="min-height:60px"></textarea>
-        <div class="row" style="margin-top:16px">
+          <div class="sub-label">VRAM compartida TTS &lt;-&gt; Whisper</div>
+          <div class="hint">Para GPUs pequeñas. En GPUs grandes, pon ambos en &laquo;No&raquo; para mantener los dos modelos cargados.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgUnloadTtsForWhisper">Descargar TTS antes de Whisper</label>
+              <select id="cfgUnloadTtsForWhisper"><option value="true">Sí</option><option value="false">No</option></select>
+            </div>
+            <div>
+              <label for="cfgUnloadWhisperForTts">Descargar Whisper antes de TTS</label>
+              <select id="cfgUnloadWhisperForTts"><option value="true">Sí</option><option value="false">No</option></select>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Hardware y rendimiento -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M9 9h6v6H9z"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></div>Hardware y rendimiento</div>
+          <div class="card-sub">Dispositivo de inferencia, precisión numérica y aceleraciones. Los cambios de <b>device</b>, <b>dtype</b> y <b>flash-attn</b> se aplican al cargar el modelo.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgDevice">Dispositivo de inferencia</label>
+              <select id="cfgDevice">
+                <option value="auto">Auto (GPU si está disponible)</option>
+                <option value="cpu">CPU</option>
+              </select>
+              <div class="hint" id="cfgDeviceHint">Se aplica al cargar el modelo.</div>
+            </div>
+            <div>
+              <label for="cfgDtype">Precisión del modelo</label>
+              <select id="cfgDtype">
+                <option value="auto">Auto (bfloat16 en GPU, float32 en CPU)</option>
+                <option value="bfloat16">bfloat16</option>
+                <option value="float16">float16</option>
+                <option value="float32">float32</option>
+              </select>
+            </div>
+            <div>
+              <label for="cfgFlashAttn">Flash Attention 2</label>
+              <select id="cfgFlashAttn">
+                <option value="false">Desactivada (por defecto)</option>
+                <option value="true">Activada (requiere flash-attn + GPU)</option>
+              </select>
+              <div class="hint">Acelera la atención en GPU. Requiere <code>pip install flash-attn</code>.</div>
+            </div>
+            <div>
+              <label for="cfgParallel">Inferencias GPU simultáneas</label>
+              <input type="number" id="cfgParallel" min="1" max="16">
+              <div class="hint">Se aplica al reiniciar el servidor (la cola se crea en el arranque).</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. Cola de inferencia -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>Cola de inferencia</div>
+          <div class="card-sub">Peticiones HTTP -&gt; cola FIFO -&gt; worker GPU. Ambos cambios se aplican al reiniciar.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgQueueEnabled">Cola interna de inferencia</label>
+              <select id="cfgQueueEnabled"><option value="true">Activada</option><option value="false">Desactivada</option></select>
+            </div>
+            <div>
+              <label for="cfgQueueMaxSize">Peticiones máx. en espera en la cola</label>
+              <input type="number" id="cfgQueueMaxSize" min="1" max="100">
+              <div class="hint">Si la cola está llena se responde 429.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. Límites de entrada -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6" rx="1"/><path d="M7 9v3M11 9v3M15 9v3M19 9v3"/></svg></div>Límites de entrada (audio subido)</div>
+          <div class="card-sub">Validaciones aplicadas a los archivos de audio y al texto antes de usar la GPU. Si se superan, la petición se rechaza.</div>
+          <div class="grid2">
+            <div class="sub-label">Audio de referencia</div>
+            <div>
+              <label for="cfgMaxRefAudioMb">Tamaño máx. (MB)</label>
+              <input type="number" id="cfgMaxRefAudioMb" min="1">
+            </div>
+            <div>
+              <label for="cfgMaxRefDuration">Duración máx. (s)</label>
+              <input type="number" id="cfgMaxRefDuration" min="1">
+            </div>
+            <div class="sub-label">Voz nueva</div>
+            <div>
+              <label for="cfgMaxVoiceBytesMb">Tamaño máx. (MB)</label>
+              <input type="number" id="cfgMaxVoiceBytesMb" min="1">
+            </div>
+            <div>
+              <label for="cfgMaxVoiceDuration">Duración máx. (s)</label>
+              <input type="number" id="cfgMaxVoiceDuration" min="1">
+            </div>
+            <div class="sub-label">Transcripción</div>
+            <div>
+              <label for="cfgMaxTranscribeBytesMb">Tamaño máx. (MB)</label>
+              <input type="number" id="cfgMaxTranscribeBytesMb" min="1">
+            </div>
+            <div>
+              <label for="cfgMaxTranscribeDuration">Duración máx. (s)</label>
+              <input type="number" id="cfgMaxTranscribeDuration" min="1">
+            </div>
+            <div class="sub-label">Generado y formato</div>
+            <div>
+              <label for="cfgMaxEstDuration">Duración estimada máx. del audio generado (s)</label>
+              <input type="number" id="cfgMaxEstDuration" min="1">
+              <div class="hint">Heurística (~16 caracteres/segundo), no la duración real.</div>
+            </div>
+            <div>
+              <label for="cfgMinSampleRate">Sample rate mínimo (Hz)</label>
+              <input type="number" id="cfgMinSampleRate" min="1000" max="384000">
+            </div>
+            <div>
+              <label for="cfgMaxSampleRate">Sample rate máximo (Hz)</label>
+              <input type="number" id="cfgMaxSampleRate" min="1000" max="384000">
+            </div>
+            <div>
+              <label for="cfgMaxChannels">Canales máximo admitidos</label>
+              <input type="number" id="cfgMaxChannels" min="1" max="8">
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. Audio de referencia (clonación de voz) -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></div>Audio de referencia (clonación de voz)</div>
+          <div class="card-sub">Preprocesado aplicado al audio de referencia antes de clonar la voz.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgNormalize">Normalizar pico de amplitud</label>
+              <select id="cfgNormalize"><option value="true">Sí</option><option value="false">No</option></select>
+              <div class="hint">&laquo;No&raquo; preserva exactamente la dinámica original del archivo.</div>
+            </div>
+            <div>
+              <label for="cfgDbfs">Nivel de pico objetivo (dBFS)</label>
+              <input type="number" id="cfgDbfs" min="-60" max="0" step="0.5">
+              <div class="hint">Valor &le; 0 (ej: -1 = -1 dBFS, margen de seguridad estándar).</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. Registro (logging) -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>Registro (logging)</div>
+          <div class="card-sub">Qué se escribe en los logs del servidor.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgLogLevel">Nivel de logging</label>
+              <select id="cfgLogLevel">
+                <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
+              </select>
+            </div>
+            <div>
+              <label for="cfgLogRequests">Registrar peticiones en requests.log</label>
+              <select id="cfgLogRequests"><option value="true">Sí</option><option value="false">No</option></select>
+            </div>
+            <div>
+              <label for="cfgLogInputText">Registrar el texto enviado al TTS</label>
+              <select id="cfgLogInputText"><option value="false">No (privacidad: solo text_length)</option><option value="true">Sí (texto truncado)</option></select>
+              <div class="hint">Desactivado por defecto: solo se registra la longitud del texto, no su contenido.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. Servidor y red -->
+        <section class="card config-card">
+          <div class="card-title"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>Servidor y red</div>
+          <div class="card-sub">Dirección, puerto y orígenes desde los que se permite llamar a la API.</div>
+          <div class="grid2">
+            <div>
+              <label for="cfgPort">Puerto HTTP del servidor</label>
+              <input type="number" id="cfgPort" min="1" max="65535">
+              <div class="hint">Se aplica al reiniciar el servidor.</div>
+            </div>
+            <div>
+              <label for="cfgCorsEnabled">Permitir peticiones de otros orígenes</label>
+              <select id="cfgCorsEnabled"><option value="false">Desactivado</option><option value="true">Activado</option></select>
+              <div class="hint">Se aplica en la siguiente petición, sin reiniciar.</div>
+            </div>
+            <div>
+              <label for="cfgCorsAllowWildcard">Permitir todos los orígenes (<code>*</code>)</label>
+              <select id="cfgCorsAllowWildcard"><option value="false">No</option><option value="true">Sí</option></select>
+              <div class="hint">Responde <code>Access-Control-Allow-Origin: *</code> a cualquier origen. Desactivado por defecto.</div>
+            </div>
+            <div>
+              <label for="cfgCorsOrigins">Orígenes permitidos (separados por coma)</label>
+              <input type="text" id="cfgCorsOrigins" placeholder="http://localhost:3000">
+              <div class="hint">Ej: <code>http://localhost:3000, http://192.168.1.10:5173</code></div>
+            </div>
+          </div>
+        </section>
+
+        <div class="row" style="margin-top:4px">
           <button class="btn-primary" onclick="saveConfig()">Guardar configuración</button>
           <span id="configStatus" class="status"></span>
         </div>
@@ -1171,6 +1239,8 @@ async function loadWhisperModelOptions(current) {
 async function loadConfig() {
   try {
     const c = await apiJson('/webui/api/config');
+    $('configLoadError').style.display = 'none';
+    $('configStatus').textContent = '';
     $('cfgMaxChars').value = c.max_text_chars;
     $('cfgMaxTextCharacters').value = c.max_text_characters;
     $('cfgPlaybackTimeout').value = c.playback_wait_timeout;
@@ -1212,7 +1282,17 @@ async function loadConfig() {
     $('keysGlobal').checked = !!c.api_keys_enabled;
     await loadWhisperModelOptions(c.whisper_model);
     loadDevices();
-  } catch (e) { toast('Error cargando configuración: ' + e.message, false); }
+  } catch (e) {
+    $('configLoadError').style.display = 'flex';
+    $('configLoadErrorMsg').textContent = e.message;
+    $('configStatus').textContent = 'Sin cargar: ' + e.message;
+    toast('Error cargando configuración: ' + e.message, false);
+  }
+}
+
+function gotoKeys() {
+  switchTab('keys');
+  $('activeKey').focus();
 }
 
 async function saveConfig() {
@@ -1397,6 +1477,7 @@ localStorage.removeItem('tts_apikey');
 $('activeKey').addEventListener('change', (e) => {
   apiKey = e.target.value.trim();
   sessionStorage.setItem('tts_apikey', apiKey);
+  if (apiKey && $('modalConfig').classList.contains('open')) loadConfig();
 });
 
 $('newVoiceFile').addEventListener('change', fileInfo);

@@ -133,23 +133,42 @@ async def test_require_api_key_enabled_allows_valid_key(keys_file, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_require_admin_bootstrap_no_keys(keys_file):
-    # Sin claves existentes se permite (para crear la primera)
+async def test_require_admin_disabled_allows_even_with_keys(keys_file, monkeypatch):
+    # Con la exigencia global desactivada ningún endpoint pide clave,
+    # aunque existan claves (afecta a admin incluido).
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", False)
+    apikey_service.create_key("OpenWebUI")
     await auth.require_admin(FakeRequest())
 
 
 @pytest.mark.asyncio
-async def test_require_admin_requires_key_even_if_disabled(keys_file, monkeypatch):
-    monkeypatch.setattr(settings.runtime, "api_keys_enabled", False)
-    created = apikey_service.create_key("OpenWebUI")
-    with pytest.raises(AuthenticationError) as e:
-        await auth.require_admin(FakeRequest())
-    assert e.value.status_code == 401
-    await auth.require_admin(FakeRequest({"authorization": f"Bearer {created['key']}"}))
+async def test_require_admin_bootstrap_no_keys(keys_file, monkeypatch):
+    # Exigencia activada pero sin claves existentes: se permite (para crear
+    # la primera clave desde el panel).
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", True)
+    await auth.require_admin(FakeRequest())
 
 
 @pytest.mark.asyncio
-async def test_require_admin_invalid_key(keys_file):
+async def test_require_admin_enabled_blocks_without_key(keys_file, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", True)
+    apikey_service.create_key("OpenWebUI")
+    with pytest.raises(AuthenticationError) as e:
+        await auth.require_admin(FakeRequest())
+    assert e.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_require_admin_enabled_allows_valid_key(keys_file, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", True)
+    created = apikey_service.create_key("OpenWebUI")
+    await auth.require_admin(FakeRequest({"authorization": f"Bearer {created['key']}"}))
+    await auth.require_admin(FakeRequest({"x-api-key": created["key"]}))
+
+
+@pytest.mark.asyncio
+async def test_require_admin_invalid_key(keys_file, monkeypatch):
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", True)
     apikey_service.create_key("OpenWebUI")
     with pytest.raises(AuthenticationError):
         await auth.require_admin(FakeRequest({"x-api-key": "qt-0000"}))

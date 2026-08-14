@@ -105,3 +105,37 @@ def test_set_config_whisper_model_no_unload_when_not_loaded(client, monkeypatch)
     res = tc.post("/webui/api/config", json={"whisper_model": "whisper-large-v3"})
     assert res.status_code == 200
     assert unloaded == []
+
+
+def test_set_config_requires_key_when_enabled(client, monkeypatch):
+    """Con 'Exigir clave API' activado, la ruta admin exige clave válida."""
+    from services import apikey_service
+
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", True)
+    created = apikey_service.create_key("admin")
+    tc, _ = client
+
+    res = tc.post("/webui/api/config", json={"whisper_model": "whisper-medium"})
+    assert res.status_code == 401
+
+    res = tc.post(
+        "/webui/api/config",
+        json={"whisper_model": "whisper-medium"},
+        headers={"X-API-Key": created["key"]},
+    )
+    assert res.status_code == 200
+    assert settings.runtime.whisper_model == "whisper-medium"
+
+
+def test_set_config_open_when_disabled_even_with_keys(client, monkeypatch):
+    """Con 'Exigir clave API' desactivado, la ruta admin no pide clave
+    aunque existan claves creadas."""
+    from services import apikey_service
+
+    monkeypatch.setattr(settings.runtime, "api_keys_enabled", False)
+    apikey_service.create_key("admin")
+    tc, _ = client
+
+    res = tc.post("/webui/api/config", json={"whisper_model": "whisper-small"})
+    assert res.status_code == 200
+    assert settings.runtime.whisper_model == "whisper-small"

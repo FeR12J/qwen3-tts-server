@@ -6,10 +6,10 @@ Tres niveles:
   - PROTECTED (require_api_key): /tts/*, /transcribe. Exige clave válida
     solo si la exigencia global de claves está activada.
   - ADMIN (require_admin): /model/*, /voice/*, /apikeys/*, /config/*.
-    Exige siempre una clave API válida, esté o no activada la exigencia
-    global, para que las operaciones administrativas no queden accesibles
-    sin autenticación. Modo bootstrap: si aún no existe ninguna clave,
-    permite el acceso (para poder crear la primera clave).
+    Exige clave válida solo si la exigencia global está activada; si se
+    desactiva, ningún endpoint (incluidos los administrativos) pide clave.
+    Modo bootstrap: si la exigencia está activada pero aún no existe ninguna
+    clave, permite el acceso (para poder crear la primera clave).
 """
 
 from fastapi import Request
@@ -38,11 +38,15 @@ async def require_api_key(request: Request):
 
 
 async def require_admin(request: Request):
-    """Dependencia FastAPI (ADMIN): exige siempre una clave API válida.
+    """Dependencia FastAPI (ADMIN): exige clave válida solo si la exigencia
+    global de claves está activada. Si se desactiva, ningún endpoint (incluidos
+    los de administración) pide clave.
 
-    Bootstrap: si todavía no existe ninguna clave, se permite el acceso
-    para poder crear la primera clave desde el panel.
+    Bootstrap: si la exigencia está activada pero aún no existe ninguna clave,
+    se permite el acceso (para poder crear la primera clave desde el panel).
     """
+    if not apikey_service.global_enabled():
+        return
     if apikey_service.count_keys() == 0:
         return
     key = _extract_key(request)
