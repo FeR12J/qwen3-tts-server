@@ -131,7 +131,9 @@ class MetricsService:
         average_ms = 0
         if self._tts_duration_count > 0:
             average_ms = int(self._tts_duration_sum_ms / self._tts_duration_count)
-        avg = lambda s, c: (s // c if c > 0 else 0)
+
+        def avg(s, c):
+            return s // c if c > 0 else 0
         return {
             "tts_requests": self._tts_requests,
             "tts_errors": self._tts_errors,

@@ -20,14 +20,29 @@ from services.config_service import get_runtime_config
 logger = logging.getLogger("tts")
 
 
-async def prepare_for_tts(models, voices, whisper_service, restore_model: bool = True):
+async def prepare_for_tts(models, voices, whisper_service, restore_model: bool = True,
+                          queue=None):
     """Liberar VRAM antes de usar el modelo TTS.
 
     - Descarga Whisper si la config ``unload_whisper_for_tts`` lo exige.
     - Si ``restore_model`` y el modelo TTS no está cargado, restaura el
       último modelo activo (descargado al ceder la GPU a Whisper).
+
+    Con ``max_parallel_inference > 1``, si hay OTRA inferencia en curso se
+    omite el intercambio de modelos (descargar Whisper con una transcripción
+    activa lo dejaría a medio usar).
     """
     rc = get_runtime_config()
+    if queue is not None and queue.inference_active > 1:
+        # Con otra inferencia en curso no se intercambian modelos: descargar
+        # Whisper con una transcripción activa (o restaurar el TTS bajo una
+        # transcripción en una GPU pequeña) es inseguro. Si el modelo TTS no
+        # está cargado, la petición fallará con un error claro y se reintenta.
+        logger.warning(
+            "VRAM: se omite el intercambio TTS/Whisper porque hay otra "
+            "inferencia en curso (max_parallel_inference > 1)"
+        )
+        return
     if rc.get("unload_whisper_for_tts", True) and whisper_service.unload_if_loaded():
         logger.info("VRAM liberada: Whisper descargado antes de usar el modelo TTS")
 
@@ -43,14 +58,23 @@ async def prepare_for_tts(models, voices, whisper_service, restore_model: bool =
                 logger.warning(f"No se pudo restaurar el modelo TTS '{last}': {e}")
 
 
-async def prepare_for_whisper(models, voices, whisper_service):
+async def prepare_for_whisper(models, voices, whisper_service, queue=None):
     """Liberar VRAM antes de transcribir.
 
     Descarga el modelo TTS si la config ``unload_tts_for_whisper`` lo exige,
     para dejar sitio al modelo Whisper (carga lazy al transcribir).
+
+    Con ``max_parallel_inference > 1``, si hay OTRA inferencia en curso se
+    omite la descarga (podría ser una generación TTS usando ese modelo).
     """
     rc = get_runtime_config()
     if not rc.get("unload_tts_for_whisper", True):
+        return
+    if queue is not None and queue.inference_active > 1:
+        logger.warning(
+            "VRAM: se omite la descarga del modelo TTS para Whisper porque "
+            "hay otra inferencia en curso (max_parallel_inference > 1)"
+        )
         return
     active = await models.get_active_model()
     if active is None:

@@ -51,10 +51,22 @@ SUPPORTED_MODELS = [
         "description": "TTS 1.7B con diseño de voz por descripción (por defecto)",
     },
     {
+        "name": "whisper-small",
+        "repo_id": "openai/whisper-small",
+        "kind": "whisper",
+        "description": "Whisper small para transcripción (244M parámetros, el más ligero)",
+    },
+    {
+        "name": "whisper-medium",
+        "repo_id": "openai/whisper-medium",
+        "kind": "whisper",
+        "description": "Whisper medium para transcripción (769M parámetros, equilibrio precisión/velocidad)",
+    },
+    {
         "name": "whisper-large-v3",
         "repo_id": "openai/whisper-large-v3",
         "kind": "whisper",
-        "description": "Whisper large-v3 para transcripción de audio",
+        "description": "Whisper large-v3 para transcripción (1550M parámetros, el más preciso)",
     },
 ]
 

@@ -88,6 +88,23 @@ class FakeMetrics:
         return 0.0
 
 
+@pytest.fixture(autouse=True)
+def isolated_api_keys(tmp_path, monkeypatch):
+    """Aislar el store de claves API en un archivo temporal vacío.
+
+    Estos tests ejercitan la lógica de las rutas, no la autenticación
+    (cubierta en test_apikey_service): sin esto, un data/apikeys.json real
+    con claves saldría del modo bootstrap y todas las rutas ADMIN
+    responderían 401.
+    """
+    import storage.api_key_storage as aks
+    from services import apikey_service
+
+    monkeypatch.setattr(aks, "APIKEYS_FILE", str(tmp_path / "apikeys.json"))
+    monkeypatch.setattr(apikey_service, "_keys", None)
+    monkeypatch.setattr(apikey_service, "_keys_mtime", None)
+
+
 @pytest.fixture
 def client():
     from app import register_exception_handlers

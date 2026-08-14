@@ -244,6 +244,11 @@ class RuntimeSettings(BaseModel):
     # Gestión de VRAM compartida TTS <-> Whisper (GPUs pequeñas)
     unload_tts_for_whisper: bool = True
     unload_whisper_for_tts: bool = True
+    # whisper.whisper_model: modelo de transcripción (se siembra desde el
+    # grupo estático). Editable desde el panel: al guardar, si Whisper está
+    # cargado se descarga y la próxima transcripción carga el modelo elegido.
+    # Debe coincidir con un directorio descargado en models/.
+    whisper_model: str = "whisper-large-v3"
     # Marcas de tiempo en las transcripciones Whisper:
     #   "off"     -> solo texto (comportamiento por defecto)
     #   "segment" -> segmentos con inicio/fin y texto

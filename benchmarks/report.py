@@ -96,7 +96,10 @@ def _group_label(group):
 def _aggregate(rows):
     ok = [r for r in rows if r.get("ok")]
     n = len(rows) or 1
-    mean = lambda k: (sum(r.get(k, 0) for r in ok) / len(ok)) if ok else 0.0
+
+    def mean(k):
+        return (sum(r.get(k, 0) for r in ok) / len(ok)) if ok else 0.0
+
     return {
         "count": len(ok),
         "error_rate_pct": round((len(rows) - len(ok)) / n * 100, 1),
@@ -161,16 +164,24 @@ def charts(results, out_dir, name="benchmarks.png"):
     x = range(len(labels))
 
     axes[0, 0].bar(x, ttfb, color="#4c72b0")
-    axes[0, 0].set_title("TTFB (s)"); axes[0, 0].set_xticks(list(x)); axes[0, 0].set_xticklabels(labels, rotation=15, ha="right")
+    axes[0, 0].set_title("TTFB (s)")
+    axes[0, 0].set_xticks(list(x))
+    axes[0, 0].set_xticklabels(labels, rotation=15, ha="right")
 
     axes[0, 1].bar(x, gen, color="#dd8452")
-    axes[0, 1].set_title("Generación (s)"); axes[0, 1].set_xticks(list(x)); axes[0, 1].set_xticklabels(labels, rotation=15, ha="right")
+    axes[0, 1].set_title("Generación (s)")
+    axes[0, 1].set_xticks(list(x))
+    axes[0, 1].set_xticklabels(labels, rotation=15, ha="right")
 
     axes[1, 0].bar(x, rtf, color="#55a868")
-    axes[1, 0].set_title("RTF"); axes[1, 0].set_xticks(list(x)); axes[1, 0].set_xticklabels(labels, rotation=15, ha="right")
+    axes[1, 0].set_title("RTF")
+    axes[1, 0].set_xticks(list(x))
+    axes[1, 0].set_xticklabels(labels, rotation=15, ha="right")
 
     axes[1, 1].bar(x, vram, color="#c44e52")
-    axes[1, 1].set_title("VRAM pico (GB)"); axes[1, 1].set_xticks(list(x)); axes[1, 1].set_xticklabels(labels, rotation=15, ha="right")
+    axes[1, 1].set_title("VRAM pico (GB)")
+    axes[1, 1].set_xticks(list(x))
+    axes[1, 1].set_xticklabels(labels, rotation=15, ha="right")
 
     plt.tight_layout()
     out = os.path.join(out_dir, name)

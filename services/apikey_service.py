@@ -2,21 +2,40 @@
 """Gestión de claves API del servidor TTS."""
 
 import hashlib
+import os
 import secrets
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from storage import api_key_storage
 from storage.api_key_storage import load_keys_file, save_keys_file
 from services.config_service import get_runtime_config
 
 logger = logging.getLogger("tts")
 
+# Intervalo mínimo entre persistencias de last_used_at: evita reescribir el
+# archivo (con las credenciales) en cada petición autenticada.
+_LAST_USED_MIN_INTERVAL = timedelta(minutes=5)
+
 _keys = None
+_keys_mtime = None
 
 
 def _load():
-    global _keys
-    _keys = load_keys_file()
+    """Cargar las claves desde disco, solo si el archivo ha cambiado.
+
+    El mtime actúa de caché: sin esto, cada petición autenticada (y cada
+    comprobación de admin) haría una lectura de disco del archivo de
+    credenciales.
+    """
+    global _keys, _keys_mtime
+    try:
+        mtime = os.path.getmtime(api_key_storage.APIKEYS_FILE)
+    except OSError:
+        mtime = None
+    if _keys is None or mtime != _keys_mtime:
+        _keys = load_keys_file()
+        _keys_mtime = mtime
 
 
 def _save():
@@ -102,17 +121,34 @@ def toggle_key(key_id: str) -> dict:
     raise KeyError(f"No existe la clave {key_id}")
 
 
+def _touch_last_used(entry: dict):
+    """Actualizar last_used_at, persistiéndolo como mucho cada 5 minutos."""
+    now = datetime.now()
+    last = entry.get("last_used_at")
+    if last:
+        try:
+            if now - datetime.strptime(last, "%Y-%m-%d %H:%M:%S") < _LAST_USED_MIN_INTERVAL:
+                return
+        except ValueError:
+            pass
+    entry["last_used_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
+    _save()
+
+
 def verify_key(key: str) -> bool:
-    """Verificar una clave API y registrar el último uso."""
+    """Verificar una clave API y registrar el último uso.
+
+    La comparación de hashes es constant-time (secrets.compare_digest) para
+    no filtrar información por timing.
+    """
     if not key:
         return False
     _load()
     digest = _hash(key)
     for k in _keys:
-        if k["key_hash"] == digest:
+        if secrets.compare_digest(k["key_hash"], digest):
             if not k["enabled"]:
                 return False
-            k["last_used_at"] = _now()
-            _save()
+            _touch_last_used(k)
             return True
     return False

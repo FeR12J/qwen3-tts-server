@@ -69,7 +69,8 @@ def create_voices_routes(app: FastAPI, ctx):
         validate_voice_name(voice_name)
 
         async with ctx.queue.inference_lock():
-            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service,
+                                  queue=ctx.queue)
             await require_model_loaded(ctx.models)
             await ensure_voice_cloning_supported(ctx.models)
 
@@ -121,7 +122,8 @@ def create_voices_routes(app: FastAPI, ctx):
 
         # Sección crítica (GPU): cargar modelo y guardar/aplicar la voz.
         async with ctx.queue.inference_lock():
-            await prepare_for_tts(ctx.models, ctx.voices, whisper_service)
+            await prepare_for_tts(ctx.models, ctx.voices, whisper_service,
+                                  queue=ctx.queue)
             await require_model_loaded(ctx.models)
             await ensure_voice_cloning_supported(ctx.models)
 

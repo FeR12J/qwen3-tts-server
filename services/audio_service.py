@@ -9,6 +9,7 @@ Formatos soportados (lectura y escritura): wav, mp3, flac, ogg, m4a.
 Decodificación: soundfile (wav/flac/ogg) con fallback a ffmpeg (mp3/m4a...).
 """
 
+import asyncio
 import io
 import os
 import re
@@ -31,6 +32,11 @@ logger = logging.getLogger("tts")
 
 # Reproductores de audio disponibles en el sistema para reproducir en este equipo
 PLAYERS = [p for p in ["mpv", "ffplay", "paplay", "aplay", "play"] if shutil.which(p)]
+
+# Timeout de los subprocessos ffmpeg/ffprobe: un stream corrupto o
+# patológico no puede colgar un worker HTTP (ni un slot de la cola)
+# indefinidamente.
+FFMPEG_TIMEOUT_SECONDS = 300
 
 # Frecuencia de muestreo de salida de los modelos Qwen3-TTS (24 kHz)
 TTS_SAMPLE_RATE = 24000
@@ -151,10 +157,16 @@ class AudioService:
         with tempfile.NamedTemporaryFile() as tmp:
             tmp.write(data)
             tmp.flush()
-            proc = subprocess.run(
-                [ffmpeg, "-v", "error", "-i", tmp.name, "-f", "wav", "-"],
-                capture_output=True,
-            )
+            try:
+                proc = subprocess.run(
+                    [ffmpeg, "-v", "error", "-i", tmp.name, "-f", "wav", "-"],
+                    capture_output=True,
+                    timeout=FFMPEG_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                raise AudioValidationError(
+                    f"ffmpeg superó el timeout de {FFMPEG_TIMEOUT_SECONDS}s decodificando el audio"
+                )
         if proc.returncode != 0 or not proc.stdout:
             raise AudioValidationError(
                 proc.stderr.decode(errors="ignore").strip()
@@ -215,17 +227,21 @@ class AudioService:
             with tempfile.NamedTemporaryFile() as tmp:
                 tmp.write(data)
                 tmp.flush()
-                proc = subprocess.run(
-                    [
-                        ffprobe, "-v", "error",
-                        "-select_streams", "a:0",
-                        "-show_entries", "stream=sample_rate,channels:format=format_name,duration",
-                        "-of", "default=noprint_wrappers=1",
-                        tmp.name,
-                    ],
-                    capture_output=True,
-                )
-            if proc.returncode == 0:
+                try:
+                    proc = subprocess.run(
+                        [
+                            ffprobe, "-v", "error",
+                            "-select_streams", "a:0",
+                            "-show_entries", "stream=sample_rate,channels:format=format_name,duration",
+                            "-of", "default=noprint_wrappers=1",
+                            tmp.name,
+                        ],
+                        capture_output=True,
+                        timeout=FFMPEG_TIMEOUT_SECONDS,
+                    )
+                except subprocess.TimeoutExpired:
+                    proc = None
+            if proc is not None and proc.returncode == 0:
                 fields = {}
                 for line in proc.stdout.decode(errors="ignore").splitlines():
                     if "=" in line:
@@ -487,10 +503,17 @@ class AudioService:
             sf.write(in_name, audio, sr)
             codec = ["-c:a", "libmp3lame", "-b:a", "192k"] if fmt == "mp3" \
                 else ["-c:a", "aac", "-b:a", "192k"]
-            proc = subprocess.run(
-                [ffmpeg, "-v", "error", "-y", "-i", in_name, *codec, out_name],
-                capture_output=True,
-            )
+            try:
+                proc = subprocess.run(
+                    [ffmpeg, "-v", "error", "-y", "-i", in_name, *codec, out_name],
+                    capture_output=True,
+                    timeout=FFMPEG_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                raise AudioValidationError(
+                    f"ffmpeg superó el timeout de {FFMPEG_TIMEOUT_SECONDS}s "
+                    f"convirtiendo el audio a {fmt}"
+                )
             if proc.returncode != 0:
                 raise AudioValidationError(
                     proc.stderr.decode(errors="ignore").strip()
@@ -602,6 +625,20 @@ class AudioService:
         """Primer reproductor de audio disponible en el sistema."""
         return PLAYERS[0] if PLAYERS else None
 
+    @staticmethod
+    async def _delete_after_playback(proc: subprocess.Popen, path: str):
+        """Borrar el archivo temporal de reproducción cuando el reproductor
+        termine (también si se mata en el apagado): sin esto cada /tts/play
+        dejaría un WAV huérfano en /tmp."""
+        try:
+            await asyncio.to_thread(proc.wait)
+        except Exception:
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
     async def play(self, audio_bytes: bytes, sr: int, timeout: int) -> dict:
         """Reproducir audio en este equipo, serializando con las reproducciones previas.
 
@@ -629,6 +666,9 @@ class AudioService:
 
             proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._queue.register_playback(proc)
+            asyncio.get_running_loop().create_task(
+                self._delete_after_playback(proc, tmp_path)
+            )
             logger.info(f"Audio en reproducción en este equipo (player={player}): {tmp_path}")
 
         return {

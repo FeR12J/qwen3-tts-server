@@ -10,6 +10,7 @@ import logging
 import secrets
 from datetime import datetime
 
+from security.validation import is_safe_voice_ref
 from storage import voice_storage
 
 logger = logging.getLogger("tts")
@@ -67,7 +68,7 @@ class VoiceManager:
         if not voice_id_or_name:
             return None
         value = str(voice_id_or_name).strip()
-        if "/" in value or "\\" in value or "\x00" in value or value in (".", ".."):
+        if not is_safe_voice_ref(value):
             return None
         try:
             meta = voice_storage.read_metadata(value)

@@ -50,7 +50,7 @@ qwen3-tts-server/
 ├── tests/               # Tests (unit/ e integration/)
 │   ├── unit/
 │   └── integration/
-├── models/              # Modelos locales (Qwen3-TTS + whisper-large-v3)
+├── models/              # Modelos locales (Qwen3-TTS + Whisper: small/medium/large-v3)
 ├── voices/              # Voces locales: <id>/metadata.json + reference.wav + reference.txt
 ├── data/                # Datos persistentes (runtime.json, apikeys.json)
 ├── webui/               # Panel web (panel.html, docs.html)
@@ -77,7 +77,9 @@ Descargar los modelos en `models/`:
 - `Qwen3-TTS-12Hz-1.7B-Base`
 - `Qwen3-TTS-12Hz-1.7B-CustomVoice`
 - `Qwen3-TTS-12Hz-1.7B-VoiceDesign` (por defecto)
-- `whisper-large-v3` (transcripción)
+- `whisper-small` (transcripción, 244M parámetros)
+- `whisper-medium` (transcripción, 769M parámetros)
+- `whisper-large-v3` (transcripción, por defecto)
 
 El tipo de cada modelo se resuelve desde `model.model.tts_model_type` y se muestra en la respuesta de `/model/load`.
 
@@ -120,6 +122,8 @@ El repositorio incluye los datos y resultados del benchmark. Para conocer la met
 | ADMIN | POST | `/webui/api/apikeys/{id}/toggle` | Activar/desactivar clave API |
 | ADMIN | DELETE | `/webui/api/apikeys/{id}` | Eliminar clave API |
 
+> **Nota**: `reference_audio` (TTS con modelos `base`) es una ruta de servidor controlada por el cliente y queda contenida al directorio del proyecto: se resuelve la ruta real (incluidos symlinks) y las rutas externas se rechazan con 400.
+
 ## Protección de endpoints
 
 - **PUBLIC** (`/health`, `/version`, estado y listados): sin autenticación.
@@ -135,7 +139,9 @@ El repositorio incluye los datos y resultados del benchmark. Para conocer la met
 
 ## Transcripción (Whisper)
 
-El servidor incluye transcripción de audio local con `whisper-large-v3` (transformers). El modelo se carga de forma perezosa en la primera petición y se descarga con `/transcribe/unload` para liberar VRAM.
+El servidor incluye transcripción de audio local con Whisper (transformers). El modelo se carga de forma perezosa en la primera petición y se descarga con `/transcribe/unload` para liberar VRAM.
+
+Modelos disponibles (descargables desde el panel o `/models/download`): `whisper-small` (244M), `whisper-medium` (769M) y `whisper-large-v3` (1550M, por defecto). El que se usa se elige desde el panel (Configuración → "Modelo de transcripción Whisper") o con la variable de entorno `QWEN_TTS_WHISPER__WHISPER_MODEL` (p.ej. `whisper-small`; tiene precedencia sobre el valor del panel como fuente de default). Debe coincidir con un directorio ya descargado en `models/`. El cambio desde el panel se aplica sin reiniciar: si Whisper está cargado se descarga y la próxima transcripción carga el modelo elegido.
 
 ```bash
 # Transcribir (idioma automático)
@@ -176,19 +182,21 @@ Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,
   - `QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`
   - `QWEN_TTS_REQUIRE_API_KEY=true`
   - `QWEN_TTS_TEXT__CHUNKING=sentence`
-  - `QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS=10000`, `QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB=25`, `QWEN_TTS_LIMITS__MAX_AUDIO_DURATION_SECONDS=30`, `QWEN_TTS_LIMITS__MAX_REFERENCE_DURATION_SECONDS=60`, `QWEN_TTS_LIMITS__MIN_SAMPLE_RATE=8000`, `QWEN_TTS_LIMITS__MAX_SAMPLE_RATE=96000`, `QWEN_TTS_LIMITS__MAX_CHANNELS=2`
+  - `QWEN_TTS_LIMITS__MAX_TEXT_CHARACTERS=10000`, `QWEN_TTS_LIMITS__MAX_REFERENCE_AUDIO_MB=25`, `QWEN_TTS_LIMITS__MAX_ESTIMATED_AUDIO_DURATION_SECONDS=30`, `QWEN_TTS_LIMITS__MAX_REFERENCE_DURATION_SECONDS=60`, `QWEN_TTS_LIMITS__MIN_SAMPLE_RATE=8000`, `QWEN_TTS_LIMITS__MAX_SAMPLE_RATE=96000`, `QWEN_TTS_LIMITS__MAX_CHANNELS=2`
   - `QWEN_TTS_VOICES_DIR=./voices`, `QWEN_TTS_AUDIO_DIR=./audios`
 - El resto de campos usa el nombre por subgrupo (`QWEN_TTS_<GRUPO>__<CAMPO>`), p.ej. `QWEN_TTS_CORS__ALLOW_ORIGINS=["*"]`.
-- Precedencia: variables de entorno > `data/runtime.json` > defaults. Las variables `QWEN_TTS_DEVICE`, `QWEN_TTS_DTYPE` y `QWEN_TTS_REQUIRE_API_KEY` (configuración en tiempo de ejecución) tienen prioridad sobre el archivo persistido.
+- Precedencia: variables de entorno > `data/runtime.json` > defaults. Cualquier variable `QWEN_TTS_*` fijada de forma explícita tiene prioridad sobre el valor persistido en el archivo (incluidas las de grupo `QWEN_TTS_<GRUPO>__<CAMPO>`, no solo `QWEN_TTS_DEVICE`/`QWEN_TTS_DTYPE`/`QWEN_TTS_REQUIRE_API_KEY`).
+- `data/` no se versiona: `runtime.json` (configuración local) y `apikeys.json` (hashes de credenciales, permisos 0600) son datos de la instalación. En un clon fresco no existe `runtime.json` y valen los defaults (el servidor funciona sin claves hasta que se crea la primera desde el panel).
 
 ### Configuración en tiempo de ejecución (`data/runtime.json`)
 Gestionada desde el panel: límite de caracteres, voz/idioma/instrucción por defecto, `device` (auto/cuda/cpu), dtype, logging de peticiones, timeout de reproducción, claves API, streaming (`streaming_enabled`) y guardado de audios (`save_audios`).
 
-## Tests
+## Tests y lint
 
 ```bash
 pip install -r requirements-dev.txt
 pytest tests/
+ruff check .
 ```
 
 ## Regla arquitectónica: validación fuera de la GPU

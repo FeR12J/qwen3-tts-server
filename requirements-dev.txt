@@ -1,6 +1,7 @@
-# Dependencias de desarrollo (tests): instalar con:
+# Dependencias de desarrollo (tests + lint): instalar con:
 #   pip install -r requirements-dev.txt
 -r requirements.txt
 pytest==9.1.1
 pytest-asyncio==1.4.0
 matplotlib==3.11.1
+ruff==0.14.14

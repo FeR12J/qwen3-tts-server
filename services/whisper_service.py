@@ -18,6 +18,7 @@ import gc
 import logging
 import os
 import re
+import threading
 from typing import Optional
 
 import torch
@@ -145,6 +146,10 @@ class WhisperService:
         self._model = None
         self._processor = None
         self._model_name = None
+        # La carga lazy ocurre en hilos (asyncio.to_thread): un lock de hilo
+        # evita que dos transcripciones concurrentes (N > 1) carguen dos
+        # instancias del modelo a la vez.
+        self._load_lock = threading.Lock()
 
     # -- Estado ------------------------------------------------------------
 
@@ -158,11 +163,20 @@ class WhisperService:
             return str(self._model.device)
         return resolve_device()
 
+    def _configured_model_name(self) -> str:
+        """Nombre del modelo Whisper configurado.
+
+        El runtime (editable desde el panel) tiene prioridad sobre el grupo
+        estático ``whisper.whisper_model``; si por cualquier razón el runtime
+        no lo tuviera, se cae al default estático.
+        """
+        return getattr(settings.runtime, "whisper_model", None) or settings.whisper.whisper_model
+
     def status(self) -> dict:
         """Estado del servicio para los endpoints de status."""
         return {
             "model_loaded": self.is_loaded(),
-            "model": settings.whisper.whisper_model,
+            "model": self._configured_model_name(),
             "device": self.get_device(),
             "timestamps": _resolve_timestamp_mode(None),
         }
@@ -288,13 +302,32 @@ class WhisperService:
         return result
 
     def _ensure_loaded(self) -> None:
-        """Cargar el modelo Whisper (bloqueante, ejecutar en hilo)."""
-        if self._model is not None:
-            return
+        """Cargar el modelo Whisper (bloqueante, ejecutar en hilo).
 
+        Garantiza que el modelo cargado sea el configurado: si ya está
+        cargado pero el configurado ha cambiado (p.ej. desde el panel), se
+        descarga el anterior y se carga el nuevo. Así el cambio de modelo se
+        aplica de forma lazy en la siguiente transcripción, incluso si no se
+        descargó explícitamente al guardar la configuración.
+        """
+        if self._model is not None and self._model_name == self._configured_model_name():
+            return
+        with self._load_lock:
+            if self._model is not None:
+                if self._model_name == self._configured_model_name():
+                    return
+                logger.info(
+                    f"Cambiando modelo Whisper: {self._model_name} -> "
+                    f"{self._configured_model_name()}"
+                )
+                self.unload()
+            self._load_model()
+
+    def _load_model(self) -> None:
+        """Carga real del modelo (bajo _load_lock)."""
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-        model_name = settings.whisper.whisper_model
+        model_name = self._configured_model_name()
         model_path = os.path.join(settings.paths.models_dir, model_name)
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Modelo Whisper no encontrado en {model_path}")

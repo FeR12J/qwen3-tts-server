@@ -130,6 +130,118 @@ def test_parallel_inferences_with_semaphore():
     asyncio.run(scenario())
 
 
+def test_model_lock_excludes_all_inferences_with_parallelism():
+    """Con max_parallel_inference=2, model_lock excluye a TODAS las
+    inferencias (un solo slot de semáforo no bastaba: N-1 podían correr en
+    paralelo con la carga/descarga de modelo)."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=2)
+        order = []
+        active = 0
+        max_active_during_model_op = 0
+
+        async def inference(i):
+            nonlocal active
+            async with q.inference_lock():
+                active += 1
+                order.append(f"infer{i}-start")
+                await asyncio.sleep(0.1)
+                active -= 1
+                order.append(f"infer{i}-end")
+
+        async def model_op():
+            nonlocal max_active_during_model_op
+            # Dos inferencias en curso: la operación de modelo debe esperar
+            # a que AMBAS terminen.
+            await asyncio.gather(inference(1), inference(2))
+            async with q.model_lock():
+                max_active_during_model_op = max(
+                    max_active_during_model_op, active
+                )
+                order.append("model")
+                await asyncio.sleep(0.02)
+
+        await model_op()
+        assert order.index("model") > order.index("infer1-end")
+        assert order.index("model") > order.index("infer2-end")
+        assert max_active_during_model_op == 0
+
+    asyncio.run(scenario())
+
+
+def test_no_inference_starts_during_model_op_with_parallelism():
+    """Con N=2, una inferencia que llega durante una model_lock espera a que
+    termine (no se cuela por el otro slot del semáforo)."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=2)
+        order = []
+
+        async def model_op():
+            async with q.model_lock():
+                order.append("model-start")
+                await asyncio.sleep(0.1)
+                order.append("model-end")
+
+        async def inference(i):
+            async with q.inference_lock():
+                order.append(f"infer{i}")
+
+        t1 = asyncio.create_task(model_op())
+        await asyncio.sleep(0.02)
+        t2 = asyncio.create_task(inference(1))
+        t3 = asyncio.create_task(inference(2))
+        await asyncio.gather(t1, t2, t3)
+
+        assert order.index("model-end") < order.index("infer1")
+        assert order.index("model-end") < order.index("infer2")
+
+    asyncio.run(scenario())
+
+
+def test_model_lock_not_starved_by_continuous_inferences():
+    """Una operación de modelo en espera no se hambreiza bajo carga sostenida.
+
+    model_lock debe bloquear las nuevas inferencias (clear de _model_idle)
+    ANTES de esperar a que las activas terminen: si espera con _model_idle
+    aún set, una presión continua se cuela una y otra vez (reentra sin
+    ceder el event loop al terminar cada turno) y el load/unload/switch se
+    retrasa indefinidamente. Con el bug, wait_for lanza TimeoutError."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=2)
+        active = 0
+        stop_pressure = asyncio.Event()
+
+        async def inference(i):
+            nonlocal active
+            async with q.inference_lock():
+                active += 1
+                await asyncio.sleep(0.02)
+                active -= 1
+
+        async def pressure():
+            i = 0
+            while not stop_pressure.is_set():
+                i += 1
+                await inference(i)
+
+        async def model_op():
+            # Dejar que la presión tenga inferencias en curso al empezar
+            await asyncio.sleep(0.05)
+            async with q.model_lock():
+                # Exclusión total: ninguna inferencia activa dentro de la
+                # sección de manipulación del modelo.
+                assert active == 0
+
+        pressure_task = asyncio.create_task(pressure())
+        model_task = asyncio.create_task(model_op())
+        # Margen holgado: la operación debe esperar solo al turno en curso.
+        await asyncio.wait_for(model_task, timeout=2.0)
+        stop_pressure.set()
+        await pressure_task
+
+    asyncio.run(scenario())
+
+
 # -- Cola interna (HTTP -> asyncio.Queue -> worker GPU) ---------------------
 
 
@@ -265,6 +377,42 @@ def test_queue_stop_drains_pending_jobs():
         await asyncio.gather(t1, t2, stop_task)
 
         assert done == ["s1", "e1", "s2", "e2"]
+
+    asyncio.run(scenario())
+
+
+def test_queue_stop_with_full_queue():
+    """stop() con la cola llena no lanza QueueFull (put_nowait lo hacía y
+    dejaba workers huérfanos): los marcadores _END esperan su hueco y los
+    workers terminan drenando."""
+    async def scenario():
+        q = QueueService(max_parallel_inference=1, enabled=True, max_size=2)
+        q.start()
+        release = asyncio.Event()
+        done = []
+
+        async def inference(i):
+            async with q.inference_lock():
+                done.append(f"s{i}")
+                if i == 1:
+                    await release.wait()
+                done.append(f"e{i}")
+
+        t1 = asyncio.create_task(inference(1))
+        await asyncio.sleep(0.05)   # t1 en ejecución
+        t2 = asyncio.create_task(inference(2))
+        t3 = asyncio.create_task(inference(3))
+        await asyncio.sleep(0.05)   # t2 y t3 llenan la cola (max_size=2)
+        assert q.queue_size == 2
+
+        stop_task = asyncio.create_task(q.stop())
+        await asyncio.sleep(0.05)
+        release.set()
+        await asyncio.gather(t1, t2, t3, stop_task)
+
+        # stop() drena también lo encolado (t3), sin lanzar QueueFull
+        assert done == ["s1", "e1", "s2", "e2", "s3", "e3"]
+        assert q._worker_tasks == []  # los workers han terminado
 
     asyncio.run(scenario())
 

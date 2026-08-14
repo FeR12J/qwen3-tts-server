@@ -487,7 +487,9 @@ def _agg(rows):
             "avg_audio_s": 0, "avg_vram_gb": 0.0, "avg_peak_ram_gb": 0.0,
             "total_audio_s": 0, "errors": len(rows) - len(ok),
         }
-    mean = lambda k: round(sum(r[k] for r in ok) / len(ok), 3) if ok else 0
+    def mean(k):
+        return round(sum(r[k] for r in ok) / len(ok), 3) if ok else 0
+
     return {
         "error_rate_pct": round((len(rows) - len(ok)) / len(rows) * 100, 1) if rows else 0,
         "count": len(ok),

@@ -178,6 +178,33 @@ def test_generating_state_during_inference(models_dir, monkeypatch):
     asyncio.run(scenario())
 
 
+def test_cancelled_inference_does_not_stick_in_generating(models_dir, monkeypatch):
+    """Una inferencia cancelada (cliente desconectado/shutdown) no puede dejar
+    el estado atascado en GENERATING: el modelo se cuarentena (ERROR) y es
+    recuperable recargándolo, en vez de bloquear el servicio para siempre."""
+    monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
+    mgr = ModelManager()
+
+    async def scenario():
+        await mgr.load_model("model-a")
+        task = asyncio.create_task(
+            mgr.generate_voice_clone(text="hola", language="es")
+        )
+        await asyncio.sleep(0.05)  # estado GENERATING
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        status = await mgr.get_model_status()
+        assert status["state"] == ModelState.ERROR.value
+        assert "cancelada" in status["error"].lower()
+        assert await mgr.get_active_model() is None
+        # Recuperable: se puede recargar
+        await mgr.load_model("model-a")
+        assert (await mgr.get_model_status())["state"] == ModelState.READY.value
+
+    asyncio.run(scenario())
+
+
 def test_load_duplicated_avoids_reload(models_dir, monkeypatch):
     monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
     mgr = ModelManager()

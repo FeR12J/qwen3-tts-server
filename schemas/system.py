@@ -22,6 +22,7 @@ class ConfigUpdate(BaseModel):
     flash_attn: Optional[bool] = None
     unload_tts_for_whisper: Optional[bool] = None
     unload_whisper_for_tts: Optional[bool] = None
+    whisper_model: Optional[str] = None
     chunking: Optional[str] = None
     normalize_reference_audio: Optional[bool] = None
     normalization_dbfs: Optional[float] = None

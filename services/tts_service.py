@@ -9,6 +9,7 @@ nunca manipula la instancia del modelo directamente).
 """
 
 import os
+import re
 import uuid
 import time
 import logging
@@ -16,6 +17,7 @@ import logging
 from dataclasses import dataclass
 
 from schemas.tts import TTSRequest
+from security.validation import is_safe_voice_ref, resolve_contained_path
 from services.audio_service import AudioValidationError
 from services.config_service import get_runtime_config, get_limits
 from services.errors import APIError, ModelLoadingError, ModelNotLoadedError
@@ -145,6 +147,21 @@ class TTSService:
             )
         return description
 
+    def _resolve_reference_audio(self, raw: str) -> str:
+        """Resolver reference_audio conteniéndola al directorio del proyecto.
+
+        El campo es una ruta de servidor controlada por el cliente: sin
+        contención permitiría forzar la lectura/decodificación de cualquier
+        archivo del sistema. Se resuelve la ruta real (symlinks incluidos)
+        y se exige que quede dentro de settings.paths.base_dir.
+        """
+        try:
+            return resolve_contained_path(
+                raw, self._config.paths.base_dir, "reference_audio"
+            )
+        except ValueError as e:
+            raise TTSValidationError(str(e))
+
     def _validate_base(self, request: TTSRequest):
         """Validar y resolver la referencia de clonación para modelos Base.
 
@@ -155,7 +172,8 @@ class TTSService:
         _validate_input_limits(): aquí solo se resuelve la referencia.
         """
         if request.reference_audio:
-            if not os.path.exists(request.reference_audio):
+            ref_path = self._resolve_reference_audio(request.reference_audio)
+            if not os.path.exists(ref_path):
                 raise TTSValidationError(
                     f"reference_audio no existe: {request.reference_audio}"
                 )
@@ -164,12 +182,11 @@ class TTSService:
                 raise TTSValidationError(
                     "reference_text es obligatorio cuando se proporciona reference_audio."
                 )
-            return request.reference_audio, ref_text
+            return ref_path, ref_text
 
         if request.voice:
             voice = request.voice or ""
-            if ("/" in voice or "\\" in voice or ".." in voice or "\x00" in voice
-                    or voice in (".", "..") or voice.startswith(("/", "\\"))):
+            if not is_safe_voice_ref(voice):
                 raise TTSValidationError(
                     "'voice' debe ser el id o nombre de una voz local "
                     "(ej: 'voice_7f32a1'), no una ruta de archivo"
@@ -195,7 +212,7 @@ class TTSService:
         rc = get_runtime_config()
         lang = request.language or rc["def_language"]
         if info.supported_languages is not None and lang.lower() not in {
-            l.lower() for l in info.supported_languages
+            item.lower() for item in info.supported_languages
         }:
             raise TTSValidationError(
                 f"language '{lang}' no soportado. Soportados: {', '.join(info.supported_languages)}"
@@ -238,9 +255,14 @@ class TTSService:
         (reference_audio o voz local) contra limits.max_reference_audio_mb.
         """
         if request.reference_audio:
-            # Si no existe, el error lo dará la validación de la referencia.
-            if os.path.exists(request.reference_audio):
-                self._check_ref_audio_size(request.reference_audio)
+            # Si no existe o escapa del directorio del proyecto, el error lo
+            # dará la validación de la referencia (_validate_base).
+            try:
+                ref_path = self._resolve_reference_audio(request.reference_audio)
+            except TTSValidationError:
+                ref_path = None
+            if ref_path is not None and os.path.exists(ref_path):
+                self._check_ref_audio_size(ref_path)
         if request.voice:
             ref = self._voices.get_reference(request.voice)
             if ref:
@@ -332,11 +354,15 @@ class TTSService:
         """Id de trazabilidad de la petición (x-request-id o uno generado).
 
         Se usa en los nombres de los audios guardados (AudioService.save)
-        para que nunca colisionen y sean trazables.
+        y en los logs estructurados. La cabecera es controlada por el
+        cliente: se sanitizan los caracteres de control (evita inyección de
+        líneas en los logs) y se limita la longitud.
         """
         if http_request is None:
             return uuid.uuid4().hex
-        return http_request.headers.get("x-request-id") or uuid.uuid4().hex
+        raw = http_request.headers.get("x-request-id") or ""
+        sanitized = re.sub(r"[\x00-\x1f\x7f]+", "", raw)[:64]
+        return sanitized or uuid.uuid4().hex
 
     async def synthesize(self, request: TTSRequest, http_request=None) -> SynthesisResult:
         """Pipeline completo de síntesis: validación + generación + codificación.
@@ -368,7 +394,8 @@ class TTSService:
             info = await self._resolve_model(request)
             self._build_kwargs(request, info)
 
-            await prepare_for_tts(self._models, self._voices, whisper_service)
+            await prepare_for_tts(self._models, self._voices, whisper_service,
+                                  queue=self._queue)
 
             if rc.get("log_requests", True) and http_request is not None and self._metrics:
                 self._metrics.log_request(http_request, text)
@@ -405,7 +432,10 @@ class TTSService:
                     wav = self._concat_wavs(parts)
 
                 audio = self._encode(request, wav, sr, request_id=request_id)
-            except Exception:
+            except BaseException:
+                # BaseException (no solo Exception): una cancelación
+                # (cliente desconectado, shutdown) también debe decrementar
+                # tts_active, o la métrica se fuga en cada petición caída.
                 duration_ms = int((time.perf_counter() - started) * 1000)
                 log_event(
                     logger, "tts_failed", request_id,
@@ -504,7 +534,8 @@ class TTSService:
         async with self._queue.inference_lock():
             # Tiempo de espera en la cola de inferencia (hasta el turno de GPU)
             queue_wait_ms = int((time.perf_counter() - t_lock) * 1000)
-            await prepare_for_tts(self._models, self._voices, whisper_service)
+            await prepare_for_tts(self._models, self._voices, whisper_service,
+                                  queue=self._queue)
 
             if rc.get("log_requests", True) and http_request is not None and self._metrics:
                 self._metrics.log_request(http_request, text)
@@ -556,7 +587,10 @@ class TTSService:
                         model_id=info.model_id,
                         model_type=info.model_type,
                     )
-            except Exception:
+            except BaseException:
+                # BaseException: GeneratorExit (cliente desconectado a mitad
+                # de stream) y CancelledError también deben decrementar
+                # tts_active, o la métrica se fuga en cada stream caído.
                 if self._metrics:
                     self._metrics.tts_failed()
                 raise

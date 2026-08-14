@@ -61,7 +61,8 @@ def create_whisper_routes(app: FastAPI, ctx):
 
         async with ctx.queue.inference_lock():
             # Liberar VRAM del modelo TTS antes de cargar Whisper (si la config lo exige)
-            await prepare_for_whisper(ctx.models, ctx.voices, whisper_service)
+            await prepare_for_whisper(ctx.models, ctx.voices, whisper_service,
+                                      queue=ctx.queue)
 
             try:
                 result = await whisper_service.transcribe(

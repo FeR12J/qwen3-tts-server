@@ -15,6 +15,7 @@ from qwen_tts import Qwen3TTSModel
 
 from config.settings import settings
 from services.config_service import validated_device, validated_dtype, get_runtime_config
+from services.errors import GPUOutOfMemoryError, GPU_OOM_MESSAGE
 
 logger = logging.getLogger("tts")
 
@@ -33,9 +34,6 @@ class ModelState(str, Enum):
     GENERATING = "generating"
     UNLOADING = "unloading"
     ERROR = "error"
-
-
-from services.errors import GPUOutOfMemoryError, GPU_OOM_MESSAGE
 
 
 @dataclass(frozen=True)
@@ -513,6 +511,21 @@ class ModelManager:
         entry["state"] = ModelState.GENERATING.value
         try:
             result = await asyncio.to_thread(getattr(model, method_name), **kwargs)
+        except asyncio.CancelledError:
+            # Una inferencia cancelada (cliente desconectado, shutdown) no
+            # puede dejar el estado atascado en GENERATING: el hilo de
+            # asyncio.to_thread no es cancelable y puede seguir usando la
+            # instancia, así que se cuarentena el modelo (ERROR) hasta que un
+            # admin lo recargue, en vez de exponerlo a uso concurrente.
+            logger.warning(
+                f"Inferencia cancelada ({method_name}): modelo marcado como ERROR"
+            )
+            entry["state"] = ModelState.ERROR.value
+            entry["error"] = (
+                "Inferencia cancelada (cliente desconectado o apagado). "
+                "Recargue el modelo para volver a usarlo."
+            )
+            raise
         except torch.cuda.OutOfMemoryError as e:
             # CUDA OOM: estado controlado, limpiar referencias y cache, y
             # elevar un error tipado que la capa HTTP traduce sin filtrar

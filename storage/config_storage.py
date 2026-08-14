@@ -26,10 +26,19 @@ def load_runtime_file() -> dict:
 
 
 def save_runtime_file(runtime: dict):
-    """Persistir la configuración en disco."""
+    """Persistir la configuración en disco (escritura atómica).
+
+    Escribe a un archivo temporal y lo mueve con ``os.replace``: un crash a
+    mitad de escritura no puede corromper runtime.json (y un archivo
+    corrupto haría perder la configuración persistida).
+    """
     try:
         os.makedirs(settings.paths.data_dir, exist_ok=True)
-        with open(RUNTIME_FILE, "w", encoding="utf-8") as f:
+        tmp_path = RUNTIME_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(runtime, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, RUNTIME_FILE)
     except Exception as e:
         logger.warning(f"No se pudo guardar la configuración de {RUNTIME_FILE}: {e}")

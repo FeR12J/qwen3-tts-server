@@ -32,6 +32,15 @@ from services.whisper_service import configure as configure_whisper
 from services import whisper_service
 from services.metrics_service import MetricsService
 from services.tts_service import TTSService
+from routes import (
+    create_tts_routes,
+    create_models_routes,
+    create_voices_routes,
+    create_system_routes,
+    create_whisper_routes,
+    create_auth_routes,
+    create_webui_routes,
+)
 
 
 # Estado CORS por petición (contextvars): evita carreras entre requests
@@ -91,15 +100,6 @@ class DynamicCORSMiddleware(CORSMiddleware):
             headers["Access-Control-Allow-Origin"] = origin
             headers.add_vary_header("Origin")
         await send(message)
-from routes import (
-    create_tts_routes,
-    create_models_routes,
-    create_voices_routes,
-    create_system_routes,
-    create_whisper_routes,
-    create_auth_routes,
-    create_webui_routes,
-)
 
 setup_logging()
 logger = logging.getLogger("tts")

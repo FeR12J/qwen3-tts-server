@@ -642,6 +642,15 @@ footer a:hover { text-decoration:underline; }
           </div>
         </div>
 
+        <div style="margin-top:12px">
+          <label for="cfgWhisperModel">Modelo de transcripción Whisper</label>
+          <select id="cfgWhisperModel">
+            <option value="whisper-small">whisper-small (244M)</option>
+            <option value="whisper-medium">whisper-medium (769M)</option>
+            <option value="whisper-large-v3">whisper-large-v3 (1550M)</option>
+          </select>
+          <div class="hint">El cambio se aplica al guardar: si Whisper está cargado se descarga y la próxima transcripción carga el modelo elegido. Los modelos sin descargar aparecen deshabilitados (descárgalos en la pestaña <b>Modelos</b>).</div>
+        </div>
         <div class="hint" style="margin:12px 0 4px">Gestión de VRAM compartida TTS &lt;-&gt; Whisper (GPUs pequeñas). En GPUs grandes, pon ambos en &laquo;No&raquo; para mantener los dos modelos cargados.</div>
         <div class="row" style="gap:14px; align-items:flex-start">
           <div style="flex:1">
@@ -1137,6 +1146,28 @@ async function loadDevices() {
   } catch (e) { $('cfgDeviceHint').textContent = 'No se pudieron listar dispositivos.'; }
 }
 
+async function loadWhisperModelOptions(current) {
+  // Poblado dinámico: marca como no instalados los modelos Whisper que faltan
+  // en models/ (se deshabilitan). Fallback a las opciones fijas si el fetch falla.
+  const sel = $('cfgWhisperModel');
+  const fallback = ['whisper-small', 'whisper-medium', 'whisper-large-v3'];
+  let installed = {};
+  try {
+    const d = await apiJson('/models/download/status');
+    (d.models || []).forEach(m => { if (m.kind === 'whisper') installed[m.name] = !!m.installed; });
+  } catch (e) { installed = {}; }
+  const names = Object.keys(installed).length ? Object.keys(installed) : fallback;
+  sel.innerHTML = '';
+  names.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = installed[n] === false ? n + ' (no instalado)' : n;
+    if (installed[n] === false) opt.disabled = true;
+    sel.appendChild(opt);
+  });
+  if (current && names.includes(current)) sel.value = current;
+}
+
 async function loadConfig() {
   try {
     const c = await apiJson('/webui/api/config');
@@ -1179,6 +1210,7 @@ async function loadConfig() {
     $('cfgMaxSampleRate').value = c.max_sample_rate;
     $('cfgMaxChannels').value = c.max_channels;
     $('keysGlobal').checked = !!c.api_keys_enabled;
+    await loadWhisperModelOptions(c.whisper_model);
     loadDevices();
   } catch (e) { toast('Error cargando configuración: ' + e.message, false); }
 }
@@ -1200,6 +1232,7 @@ async function saveConfig() {
     save_audios: $('cfgSaveAudios').value === 'true',
     unload_tts_for_whisper: $('cfgUnloadTtsForWhisper').value === 'true',
     unload_whisper_for_tts: $('cfgUnloadWhisperForTts').value === 'true',
+    whisper_model: $('cfgWhisperModel').value,
     whisper_timestamps: $('cfgWhisperTimestamps').value,
     device: $('cfgDevice').value,
     chunking: $('cfgChunking').value,
@@ -1302,7 +1335,8 @@ async function deleteKey(id, name) {
 async function loadWhisperStatus() {
   try {
     const d = await apiJson('/transcribe/status');
-    $('whisperStatus').innerHTML = 'Modelo: <b>' + (d.model_loaded ? 'cargado (' + d.device + ')' : 'no cargado — se carga en la primera transcripción') + '</b>';
+    const name = d.model ? '<b>' + d.model + '</b> · ' : '';
+    $('whisperStatus').innerHTML = 'Modelo: ' + name + (d.model_loaded ? 'cargado (' + d.device + ')' : 'no cargado — se carga en la primera transcripción');
   } catch (e) { $('whisperStatus').textContent = 'Error: ' + e.message; }
 }
 

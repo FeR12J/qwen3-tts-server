@@ -67,6 +67,35 @@ def test_verify_key_and_last_used(keys_file):
     assert apikey_service.verify_key("qt-invalida") is False
 
 
+def test_verify_key_throttles_last_used_persistence(keys_file):
+    """last_used_at se persiste como mucho cada 5 minutos: una segunda
+    verificación en el intervalo no reescribe el archivo de credenciales."""
+    created = apikey_service.create_key("OpenWebUI")
+    assert apikey_service.verify_key(created["key"]) is True
+    first = json.loads(keys_file.read_text())[0]["last_used_at"]
+    assert first is not None
+
+    assert apikey_service.verify_key(created["key"]) is True
+    second = json.loads(keys_file.read_text())[0]["last_used_at"]
+    assert second == first  # sin reescritura dentro del intervalo
+
+
+def test_verify_key_uses_constant_time_compare(keys_file, monkeypatch):
+    """La comparación de hashes usa secrets.compare_digest (no ==)."""
+    import secrets
+    calls = []
+    real = secrets.compare_digest
+
+    def spy(a, b):
+        calls.append((a, b))
+        return real(a, b)
+
+    monkeypatch.setattr(secrets, "compare_digest", spy)
+    created = apikey_service.create_key("OpenWebUI")
+    apikey_service.verify_key(created["key"])
+    assert any(c[1] == apikey_service._hash(created["key"]) for c in calls)
+
+
 def test_delete_and_toggle(keys_file):
     created = apikey_service.create_key("A")
     created2 = apikey_service.create_key("B")

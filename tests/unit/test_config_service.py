@@ -198,3 +198,64 @@ def test_load_runtime_config_seeds_from_static_groups(monkeypatch):
     )
     # Restaurar el singleton al estado previo (load_runtime_config lo reemplaza)
     settings.runtime = original_runtime
+
+
+def test_load_runtime_config_env_beats_file(monkeypatch):
+    """Precedencia documentada: una variable de entorno EXPLÍCITA gana al
+    archivo persistido (QWEN_TTS_LIMITS__MAX_CHANNELS=4 > runtime.json=6)."""
+    original_runtime = settings.runtime
+    monkeypatch.setenv("QWEN_TTS_LIMITS__MAX_CHANNELS", "4")
+    # Lo que pydantic resolvería desde la variable en un arranque real:
+    monkeypatch.setattr(settings.limits, "max_channels", 4)
+    monkeypatch.setattr(
+        "services.config_service.load_runtime_file",
+        lambda: {"max_channels": 6},
+    )
+    cs.load_runtime_config()
+    assert settings.runtime.max_channels == 4
+    settings.runtime = original_runtime
+
+
+def test_load_runtime_config_fresh_install_seeds_port(monkeypatch):
+    """Instalación limpia (sin runtime.json): runtime.port se siembra desde
+    server.port (donde cae QWEN_TTS_PORT), en vez de quedarse en el default
+    8001 e ignorar la variable de entorno."""
+    original_runtime = settings.runtime
+    monkeypatch.setattr(settings.server, "port", 9999)
+    monkeypatch.setattr(
+        "services.config_service.load_runtime_file",
+        lambda: {},
+    )
+    cs.load_runtime_config()
+    assert settings.runtime.port == 9999
+    settings.runtime = original_runtime
+
+
+def test_load_runtime_config_seeds_whisper_model_from_static(monkeypatch):
+    """Instalación limpia: runtime.whisper_model se siembra desde el grupo
+    estático whisper.whisper_model (editable después desde el panel)."""
+    original_runtime = settings.runtime
+    monkeypatch.setattr(settings.whisper, "whisper_model", "whisper-medium")
+    monkeypatch.setattr(
+        "services.config_service.load_runtime_file",
+        lambda: {},
+    )
+    cs.load_runtime_config()
+    assert settings.runtime.whisper_model == "whisper-medium"
+    settings.runtime = original_runtime
+
+
+def test_load_runtime_config_env_beats_file_whisper_model(monkeypatch):
+    """Precedencia: QWEN_TTS_WHISPER__WHISPER_MODEL=whisper-small gana a un
+    runtime.json con whisper-large-v3."""
+    original_runtime = settings.runtime
+    monkeypatch.setenv("QWEN_TTS_WHISPER__WHISPER_MODEL", "whisper-small")
+    # Lo que pydantic resolvería desde la variable en un arranque real:
+    monkeypatch.setattr(settings.whisper, "whisper_model", "whisper-small")
+    monkeypatch.setattr(
+        "services.config_service.load_runtime_file",
+        lambda: {"whisper_model": "whisper-large-v3"},
+    )
+    cs.load_runtime_config()
+    assert settings.runtime.whisper_model == "whisper-small"
+    settings.runtime = original_runtime

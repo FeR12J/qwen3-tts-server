@@ -163,3 +163,116 @@ def test_validate_config_update_new_fields():
         },
         cs,
     )
+
+
+def test_validate_config_update_whisper_model():
+    """whisper_model se valida contra la whitelist del downloader (fuente
+    única): los modelos conocidos pasan, los desconocidos se rechazan."""
+    from fastapi import HTTPException
+    from security.validation import validate_config_update
+    from services.model_downloader import SUPPORTED_MODELS
+
+    class FakeConfigService:
+        def get_runtime_config(self):
+            return {}
+
+    cs = FakeConfigService()
+    whisper_names = [m["name"] for m in SUPPORTED_MODELS if m["kind"] == "whisper"]
+    assert whisper_names, "el downloader debe declarar modelos Whisper"
+
+    # Todos los modelos Whisper soportados pasan
+    for name in whisper_names:
+        validate_config_update({"whisper_model": name}, cs)
+
+    # Desconocidos / vacíos / no-string: se rechazan
+    for bad in ("whisper-huge", "Qwen3-TTS-12Hz-1.7B-Base", "", "   ", 123, None):
+        with pytest.raises(HTTPException, match="whisper_model inválido"):
+            validate_config_update({"whisper_model": bad}, cs)
+
+
+def test_validate_config_update_partial_sample_rate_range():
+    """Una actualización parcial también valida el rango contra el valor
+    vigente (no solo cuando min y max vienen juntos)."""
+    from fastapi import HTTPException
+    from security.validation import validate_config_update
+
+    class FakeConfigService:
+        def get_runtime_config(self):
+            return {"min_sample_rate": 96000, "max_sample_rate": 96000}
+
+    cs = FakeConfigService()
+    # max actualizado a un valor menor que el min vigente: se rechaza
+    with pytest.raises(HTTPException, match="menor"):
+        validate_config_update({"max_sample_rate": 8000}, cs)
+    # min actualizado a un valor mayor que el max vigente: se rechaza
+    with pytest.raises(HTTPException, match="menor"):
+        validate_config_update({"min_sample_rate": 192000}, cs)
+    # coherentes con el vigente: pasan
+    validate_config_update({"max_sample_rate": 192000}, cs)
+    validate_config_update({"min_sample_rate": 4000}, cs)
+
+
+# -- Contención de rutas (reference_audio) y referencias de voz -------------
+
+
+def test_is_safe_voice_ref():
+    from security.validation import is_safe_voice_ref
+
+    assert is_safe_voice_ref("voice_7f32a1")
+    assert is_safe_voice_ref("Serena")
+    assert not is_safe_voice_ref("")
+    assert not is_safe_voice_ref(".")
+    assert not is_safe_voice_ref("..")
+    assert not is_safe_voice_ref("/etc/passwd")
+    assert not is_safe_voice_ref("a/b")
+    assert not is_safe_voice_ref("a\\b")
+    assert not is_safe_voice_ref("a..b")
+    assert not is_safe_voice_ref("C:\\x")
+    assert not is_safe_voice_ref("voice\x00_1")
+
+
+def test_resolve_contained_path_inside_root(tmp_path):
+    from security.validation import resolve_contained_path
+
+    root = tmp_path / "proj"
+    inner = root / "audios"
+    inner.mkdir(parents=True)
+    f = inner / "ref.wav"
+    f.write_bytes(b"x")
+
+    # Ruta absoluta dentro de root
+    assert resolve_contained_path(str(f), str(root)) == str(f)
+    # Ruta relativa (se resuelve contra root)
+    assert resolve_contained_path("audios/ref.wav", str(root)) == str(f)
+
+
+def test_resolve_contained_path_rejects_outside(tmp_path):
+    from security.validation import resolve_contained_path
+
+    root = tmp_path / "proj"
+    root.mkdir()
+
+    # Ruta absoluta externa
+    with pytest.raises(ValueError, match="dentro del directorio"):
+        resolve_contained_path("/etc/hostname", str(root))
+    # Traversal con ..
+    with pytest.raises(ValueError):
+        resolve_contained_path("../../etc/hostname", str(root))
+    # Vacío / NUL
+    with pytest.raises(ValueError):
+        resolve_contained_path("", str(root))
+    with pytest.raises(ValueError):
+        resolve_contained_path("ref\x00.wav", str(root))
+
+
+def test_resolve_contained_path_rejects_symlink_escape(tmp_path):
+    """Un symlink dentro de root que apunta fuera no permite escapar."""
+    import os
+    from security.validation import resolve_contained_path
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    os.symlink("/etc", str(root / "escape"))
+
+    with pytest.raises(ValueError):
+        resolve_contained_path(str(root / "escape" / "hostname"), str(root))

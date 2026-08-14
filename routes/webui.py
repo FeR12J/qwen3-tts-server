@@ -11,7 +11,7 @@ from config.settings import settings
 from security.auth import require_admin
 from schemas.system import ConfigUpdate
 from security.validation import validate_config_update
-from services import config_service
+from services import config_service, whisper_service
 from utils.gpu import list_devices
 
 logger = logging.getLogger("tts")
@@ -49,6 +49,18 @@ def create_webui_routes(app: FastAPI, ctx):
 
         rc = config_service.update_runtime_config(changes)
         config_service.apply_log_level()
+
+        # Si cambió el modelo Whisper y está cargado, descargarlo: libera la
+        # VRAM al instante y la próxima transcripción cargará el modelo
+        # elegido (bajo model_lock para no cortar una transcripción activa).
+        if "whisper_model" in changes and whisper_service.is_loaded():
+            async with ctx.queue.model_lock():
+                await whisper_service.unload()
+            logger.info(
+                f"Modelo Whisper cambiado a '{changes['whisper_model']}': "
+                "el anterior se descargó, se recargará en la próxima transcripción"
+            )
+
         logger.info("Configuración en tiempo de ejecución actualizada desde el panel")
         return rc
 

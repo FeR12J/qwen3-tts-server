@@ -163,7 +163,14 @@ def get_voice_files(voice_id: str) -> tuple:
 
     voice_dir = _voice_dir(voice_id)
     ref_audio = meta.get("reference_audio") or REFERENCE_AUDIO_FILE
-    wav_path = os.path.join(voice_dir, ref_audio)
+    # Defensa en profundidad: un metadata.json manipulado en local podría
+    # apuntar fuera del directorio de la voz (el id ya está contenido, pero
+    # el campo reference_audio también debe estarlo).
+    wav_path = os.path.realpath(os.path.join(voice_dir, ref_audio))
+    if wav_path != voice_dir and not wav_path.startswith(voice_dir + os.sep):
+        raise ValueError(
+            f"reference_audio fuera del directorio de la voz: {ref_audio!r}"
+        )
     if not os.path.exists(wav_path):
         legacy = os.path.join(voice_dir, LEGACY_AUDIO_FILE)
         wav_path = legacy if os.path.exists(legacy) else None

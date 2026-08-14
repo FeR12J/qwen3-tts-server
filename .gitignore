@@ -5,3 +5,8 @@ models/
 audios/
 requests.log
 voices/
+.ruff_cache
+# Datos persistentes de la instalación (runtime.json, apikeys.json):
+# configuración local y credenciales, nunca se versionan.
+data/*
+!data/.gitkeep

@@ -32,7 +32,8 @@ def create_models_routes(app: FastAPI, ctx):
             try:
                 # Liberar VRAM que ocupe Whisper antes de cargar el modelo TTS
                 await prepare_for_tts(
-                    ctx.models, ctx.voices, whisper_service, restore_model=False
+                    ctx.models, ctx.voices, whisper_service,
+                    restore_model=False, queue=ctx.queue,
                 )
                 info = await ctx.models.load_model(model_id)
                 return {

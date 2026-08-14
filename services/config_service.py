@@ -45,10 +45,17 @@ RUNTIME_DEFAULTS_SEED = {
     "min_sample_rate": ("limits", "min_sample_rate"),
     "max_sample_rate": ("limits", "max_sample_rate"),
     "max_channels": ("limits", "max_channels"),
+    "whisper_model": ("whisper", "whisper_model"),
     "port": ("server", "port"),
     "cors_enabled": ("cors", "enabled"),
     "cors_origins": ("cors", "origins"),
     "cors_allow_wildcard": ("cors", "allow_wildcard"),
+}
+
+# Límites de bytes: el grupo estático los guarda en bytes y el runtime en MB.
+RUNTIME_BYTES_SEED = {
+    "max_voice_audio_bytes_mb": ("limits", "max_voice_audio_bytes"),
+    "max_transcribe_audio_bytes_mb": ("limits", "max_transcribe_audio_bytes"),
 }
 
 
@@ -64,38 +71,57 @@ def _seed_runtime_defaults() -> dict:
     for field, (group, key) in RUNTIME_DEFAULTS_SEED.items():
         out[field] = getattr(getattr(settings, group), key)
     # Los límites de bytes se guardan en MB en el runtime (unidades legibles)
-    out["max_voice_audio_bytes_mb"] = settings.limits.max_voice_audio_bytes // (1024 * 1024)
-    out["max_transcribe_audio_bytes_mb"] = settings.limits.max_transcribe_audio_bytes // (1024 * 1024)
+    for field, (group, key) in RUNTIME_BYTES_SEED.items():
+        out[field] = getattr(getattr(settings, group), key) // (1024 * 1024)
     return out
 
 
 def _env_runtime_values() -> dict:
-    """Valores runtime ya resueltos por pydantic desde variables de entorno."""
-    return {
-        field: getattr(settings.runtime, field)
-        for field, env_var in RUNTIME_ENV_VARS.items()
-        if os.environ.get(env_var)
-    }
+    """Valores runtime fijados EXPLÍCITAMENTE por variables de entorno.
+
+    Incluye las variables planas (QWEN_TTS_DEVICE, QWEN_TTS_DTYPE,
+    QWEN_TTS_REQUIRE_API_KEY) y, para cada campo sembrado, la variable de
+    grupo QWEN_TTS_<GRUPO>__<CAMPO> si está definida (p.ej.
+    QWEN_TTS_LIMITS__MAX_CHANNELS, QWEN_TTS_SERVER__PORT). Solo se devuelven
+    las que el usuario fijó de verdad: el resto queda en el seed (defaults
+    heredados) para que runtime.json pueda sobreescribirlas.
+    """
+    out = {}
+    for field, env_var in RUNTIME_ENV_VARS.items():
+        if os.environ.get(env_var):
+            out[field] = getattr(settings.runtime, field)
+    for field, (group, key) in RUNTIME_DEFAULTS_SEED.items():
+        env_var = f"QWEN_TTS_{group.upper()}__{key.upper()}"
+        if os.environ.get(env_var):
+            out[field] = getattr(getattr(settings, group), key)
+    for field, (group, key) in RUNTIME_BYTES_SEED.items():
+        env_var = f"QWEN_TTS_{group.upper()}__{key.upper()}"
+        if os.environ.get(env_var):
+            out[field] = getattr(getattr(settings, group), key) // (1024 * 1024)
+    return out
 
 
 def load_runtime_config():
     """Cargar configuración persistida desde disco (si existe).
 
-    Precedencia: variables de entorno QWEN_TTS_* > data/runtime.json >
-    defaults (heredados de los grupos estáticos).
+    Precedencia (documentada): variables de entorno QWEN_TTS_* >
+    data/runtime.json > defaults (heredados de los grupos estáticos).
+
+    El seed SIEMPRE se aplica (no solo si hay archivo o entorno): en una
+    instalación limpia sin variables de entorno, los defaults heredados
+    (p.ej. server.port -> runtime.port) deben valer; y con variables de
+    entorno fijadas, estas ganan al archivo en los campos que cubren.
     """
     env_values = _env_runtime_values()
-    settings.runtime = RuntimeSettings()
     data = load_runtime_file()
     valid = {
         key: value
         for key, value in data.items()
         if key in RUNTIME_FIELDS and value is not None
     }
-    if valid or env_values:
-        settings.runtime = settings.runtime.model_copy(
-            update={**_seed_runtime_defaults(), **valid, **env_values}
-        )
+    settings.runtime = RuntimeSettings().model_copy(
+        update={**_seed_runtime_defaults(), **valid, **env_values}
+    )
 
 
 def save_runtime_config():
