@@ -17,6 +17,11 @@ from schemas.models import LoadModelRequest
 logger = logging.getLogger("tts")
 
 
+def _whisper_model_names() -> set:
+    """Nombres de los modelos Whisper soportados (no son modelos TTS)."""
+    return {m["name"] for m in model_downloader.SUPPORTED_MODELS if m.get("kind") == "whisper"}
+
+
 def create_models_routes(app: FastAPI, ctx):
     """Rutas de carga/descarga y listado de modelos."""
 
@@ -28,6 +33,14 @@ def create_models_routes(app: FastAPI, ctx):
 
             model_id = req_body.model_id.strip()
             validate_model_id(model_id)
+            if model_id in _whisper_model_names():
+                raise APIError(
+                    "INVALID_MODEL_TYPE",
+                    f"'{model_id}' es un modelo de transcripción Whisper, no un "
+                    "modelo TTS. Cárgalo con POST /transcribe/load o usa "
+                    "POST /tts/audio/transcriptions para transcribir.",
+                    400,
+                )
 
             try:
                 # Liberar VRAM que ocupe Whisper antes de cargar el modelo TTS
@@ -105,8 +118,17 @@ def create_models_routes(app: FastAPI, ctx):
     @app.get("/models/status")
     @app.get("/tts/audio/models/status")
     async def models_status():
-        """Estado de cada modelo local (para la tabla de gestión del panel)."""
-        return {"models": ctx.models.list_models_status()}
+        """Estado de cada modelo local (para la tabla de gestión del panel).
+
+        Excluye los modelos Whisper: son de transcripción y se gestionan
+        desde /transcribe/* (no son modelos TTS cargables con /model/load).
+        """
+        whisper = _whisper_model_names()
+        rows = [
+            row for row in ctx.models.list_models_status()
+            if row["model"] not in whisper
+        ]
+        return {"models": rows}
 
     @app.get("/model/status")
     async def model_status():

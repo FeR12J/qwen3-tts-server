@@ -125,3 +125,12 @@ def test_load_model_missing_dir_raises(svc, fake_transformers, monkeypatch):
     with pytest.raises(FileNotFoundError):
         svc._ensure_loaded()
     assert not svc.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_load_public_method(svc, fake_transformers, monkeypatch):
+    """load() (público, async) carga el modelo configurado sin bloquear."""
+    monkeypatch.setattr(settings.runtime, "whisper_model", "whisper-medium")
+    await svc.load()
+    assert svc.is_loaded()
+    assert svc._model_name == "whisper-medium"

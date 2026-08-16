@@ -108,6 +108,8 @@ El repositorio incluye los datos y resultados del benchmark. Para conocer la met
 | PROTECTED | POST | `/tts/play` | Generar TTS y reproducirlo en este equipo |
 | PROTECTED | POST | `/tts/audio/speech` | Generar TTS (compatible OpenWebUI) |
 | PROTECTED | POST | `/transcribe` | Transcribir audio a texto con Whisper |
+| PROTECTED | POST | `/tts/audio/transcriptions` | Transcribir audio (compatible OpenAI/OpenWebUI, multipart `file`) |
+| PROTECTED | POST | `/transcribe/load` | Cargar el modelo Whisper de forma explícita (sin transcribir) |
 | PROTECTED | POST | `/transcribe/unload` | Descargar Whisper y liberar VRAM |
 | ADMIN | POST | `/model/load` | Cargar modelo local |
 | ADMIN | POST | `/model/unload` | Descargar modelo y liberar VRAM |
@@ -139,9 +141,9 @@ El repositorio incluye los datos y resultados del benchmark. Para conocer la met
 
 ## Transcripción (Whisper)
 
-El servidor incluye transcripción de audio local con Whisper (transformers). El modelo se carga de forma perezosa en la primera petición y se descarga con `/transcribe/unload` para liberar VRAM.
+El servidor incluye transcripción de audio local con Whisper (transformers). El modelo se carga de forma perezosa en la primera petición y se descarga con `/transcribe/unload` para liberar VRAM. Se puede pre-cargar explícitamente con `POST /transcribe/load` (o el botón "Cargar modelo" de la pestaña Transcripción del panel).
 
-Modelos disponibles (descargables desde el panel o `/models/download`): `whisper-small` (244M), `whisper-medium` (769M) y `whisper-large-v3` (1550M, por defecto). El que se usa se elige desde el panel (Configuración → "Modelo de transcripción Whisper") o con la variable de entorno `QWEN_TTS_WHISPER__WHISPER_MODEL` (p.ej. `whisper-small`; tiene precedencia sobre el valor del panel como fuente de default). Debe coincidir con un directorio ya descargado en `models/`. El cambio desde el panel se aplica sin reiniciar: si Whisper está cargado se descarga y la próxima transcripción carga el modelo elegido.
+Modelos disponibles (descargables desde el panel o `/models/download`): `whisper-small` (244M), `whisper-medium` (769M) y `whisper-large-v3` (1550M, por defecto). El que se usa se elige desde el panel (Configuración → "Modelo de transcripción Whisper") o con la variable de entorno `QWEN_TTS_WHISPER__WHISPER_MODEL` (p.ej. `whisper-small`; tiene precedencia sobre el valor del panel como fuente de default). Debe coincidir con un directorio ya descargado en `models/`. El cambio desde el panel se aplica sin reiniciar: si Whisper está cargado se descarga y la próxima transcripción carga el modelo elegido. Los modelos Whisper no aparecen en la tabla de modelos TTS del panel (`/models/status`), que solo lista modelos de síntesis.
 
 ```bash
 # Transcribir (idioma automático)
@@ -152,9 +154,20 @@ curl -X POST http://localhost:8001/transcribe \
 # Forzar idioma español
 curl -X POST http://localhost:8001/transcribe \
   -F "audio=@/ruta/al/audio.wav" -F "language=es"
+
+# Endpoint compatible OpenAI/OpenWebUI (multipart: file, model, language,
+# response_format=json|text|srt|vtt|verbose_json, timestamp_granularities[])
+curl -X POST http://localhost:8001/tts/audio/transcriptions \
+  -H "X-API-Key: qt-tu-clave" \
+  -F "file=@/ruta/al/audio.wav" -F "response_format=json"
 ```
 
-Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,"model":"whisper-large-v3","device":"cuda:0"}`
+Respuesta: `{"status":"ok","text":"...","language":"es","duration_seconds":4.96,"model":"whisper-large-v3","device":"cuda:0"}`. El endpoint `/tts/audio/transcriptions` devuelve `{"text": ...}` (formato OpenAI), texto plano (`text`), subtítulos (`srt`/`vtt`) o detalle (`verbose_json`); el campo `model` del cliente se ignora y se usa el modelo configurado.
+
+### OpenWebUI
+
+- **TTS (texto → audio)**: en Ajustes → Sonido de OpenWebUI, usa una engine "OpenAI-compatible" con URL base `http://<host>:8001/tts` (el servidor responde en `/tts/audio/speech`).
+- **Transcripción (audio → texto)**: la misma URL base sirve `/tts/audio/transcriptions`; el campo `model` enviado por OpenWebUI se ignora (se usa el modelo Whisper configurado en este servidor).
 
 - Formatos soportados: wav, mp3, flac, ogg, m4a... (decodificación vía ffmpeg, con fallback a soundfile)
 - `language`: código ISO de 2-3 letras o vacío para detección automática

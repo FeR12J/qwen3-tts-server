@@ -57,10 +57,24 @@ def _resolve_timestamp_mode(override: Optional[str]) -> str:
     return "off"
 
 
+def _timestamp_begin(tokenizer) -> Optional[int]:
+    """Primer id de token de tiempo (compatible transformers >= 4.50).
+
+    ``WhisperTokenizerFast.timestamp_begin`` (atributo) se eliminó en
+    transformers moderno y se sustituyó por el método ``timestamp_ids()``.
+    """
+    ids = getattr(tokenizer, "timestamp_ids", None)
+    if ids is not None:
+        ids = ids() if callable(ids) else ids
+        if ids:
+            return ids[0]
+    return getattr(tokenizer, "timestamp_begin", None)
+
+
 def _extract_segments(tokenizer, token_ids, duration_seconds: float) -> list:
     """Convertir los tokens generados con timestamps en segmentos.
 
-    - Los ids >= ``tokenizer.timestamp_begin`` son marcas de tiempo
+    - Los ids >= ``timestamp_begin`` son marcas de tiempo
       (segundos = (id - timestamp_begin) * 20 ms).
     - Los ids de texto entre dos marcas pertenecen al segmento que abre la
       primera. Una marca consecutiva sin texto no crea segmento vacío.
@@ -69,7 +83,9 @@ def _extract_segments(tokenizer, token_ids, duration_seconds: float) -> list:
 
     Devuelve [{"start": s, "end": e, "text": t}, ...] con s/e en segundos.
     """
-    timestamp_begin = tokenizer.timestamp_begin
+    timestamp_begin = _timestamp_begin(tokenizer)
+    if timestamp_begin is None:
+        raise ValueError("El tokenizer no expone marcas de tiempo")
     ids = token_ids.tolist() if hasattr(token_ids, "tolist") else list(token_ids)
 
     segments = []
@@ -191,6 +207,14 @@ class WhisperService:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info("Modelo Whisper descargado")
+
+    async def load(self) -> None:
+        """Cargar el modelo Whisper de forma explícita (bloqueante en hilo).
+
+        Equivale a la carga lazy de la primera transcripción: garantiza que
+        el modelo cargado es el configurado y no bloquea el event loop.
+        """
+        await asyncio.to_thread(self._ensure_loaded)
 
     def unload_if_loaded(self) -> bool:
         """Descargar Whisper solo si está cargado (no-op en caso contrario).
@@ -394,6 +418,11 @@ async def transcribe(audio, language: Optional[str] = None,
 async def unload() -> None:
     """Descargar el modelo Whisper (asíncrono: libera el hilo)."""
     await asyncio.to_thread(_get().unload)
+
+
+async def load() -> None:
+    """Cargar el modelo Whisper de forma explícita (asíncrono)."""
+    await _get().load()
 
 
 def unload_if_loaded() -> bool:

@@ -85,6 +85,24 @@ def test_segments_basico():
     ]
 
 
+def test_segments_con_api_nueva_sin_timestamp_begin():
+    """Transformers >= 4.50: solo existe timestamp_ids() (sin atributo)."""
+    m = _pieces(["Hola", "mundo"])
+
+    class ModernTokenizer(FakeTokenizer):
+        @property
+        def timestamp_begin(self):
+            raise AttributeError("timestamp_begin ya no existe en transformers 4.57")
+
+        def timestamp_ids(self):
+            return list(range(_TIMESTAMP_BEGIN, _TIMESTAMP_BEGIN + 1501))
+
+    tk = ModernTokenizer(m)
+    ids = [_ts(0.5), 100, 101, _ts(3.0)]
+    segs = ws._extract_segments(tk, ids, duration_seconds=10.0)
+    assert segs == [{"start": 0.5, "end": 3.0, "text": "Holamundo"}]
+
+
 def test_segments_ignora_tokens_especiales_iniciales():
     m = _pieces(["Hola"])
     tk = FakeTokenizer(m)

@@ -425,6 +425,7 @@ footer a:hover { text-decoration:underline; }
     </div>
     <div class="row" style="margin-top:14px">
       <button class="btn-primary" id="btnTranscribe" onclick="transcribeAudio()">Transcribir</button>
+      <button class="btn-primary" id="btnWhisperLoad" onclick="loadWhisper()" style="display:none">Cargar modelo</button>
       <button class="btn-danger" onclick="unloadWhisper()">Descargar modelo</button>
       <span id="transcribeStatus" class="status"></span>
     </div>
@@ -1417,7 +1418,22 @@ async function loadWhisperStatus() {
     const d = await apiJson('/transcribe/status');
     const name = d.model ? '<b>' + d.model + '</b> · ' : '';
     $('whisperStatus').innerHTML = 'Modelo: ' + name + (d.model_loaded ? 'cargado (' + d.device + ')' : 'no cargado — se carga en la primera transcripción');
+    $('btnWhisperLoad').style.display = d.model_loaded ? 'none' : 'inline-block';
   } catch (e) { $('whisperStatus').textContent = 'Error: ' + e.message; }
+}
+async function loadWhisper() {
+  const btn = $('btnWhisperLoad');
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Cargando...';
+    const d = await apiJson('/transcribe/load', { method: 'POST' });
+    toast(d.model_loaded ? 'Modelo Whisper cargado' : 'Modelo Whisper listo');
+    loadWhisperStatus();
+  } catch (e) { toast('Error: ' + e.message, false); }
+  finally {
+    btn.disabled = false;
+    btn.textContent = 'Cargar modelo';
+  }
 }
 
 async function transcribeAudio() {

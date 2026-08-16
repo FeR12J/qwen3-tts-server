@@ -139,6 +139,28 @@ def test_models_status_shape(client):
     assert unloaded["device"] is None
 
 
+def test_models_status_excludes_whisper(client):
+    """Los modelos Whisper no aparecen en la tabla de modelos TTS."""
+    tc, models, ctx = client
+    orig = models.list_local_models
+    models.list_local_models = lambda: orig() + ["whisper-large-v3", "whisper-small"]
+    res = tc.get("/models/status")
+    assert res.status_code == 200
+    names = {r["model"] for r in res.json()["models"]}
+    assert "whisper-large-v3" not in names
+    assert "whisper-small" not in names
+    assert "otro-modelo-local" in names
+
+
+def test_model_load_whisper_rejected_400(client):
+    """/model/load rechaza modelos Whisper con un error claro (400)."""
+    tc, _, _ = client
+    res = tc.post("/model/load", json={"model_id": "whisper-large-v3"})
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "INVALID_MODEL_TYPE"
+    assert "transcripción" in res.json()["error"]["message"]
+
+
 def test_model_activate_loaded(client):
     tc, models, ctx = client
     res = tc.post("/model/activate", json={"model_id": "Qwen3-TTS-0.6B"})
