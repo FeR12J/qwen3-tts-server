@@ -272,7 +272,8 @@ class TTSService:
         """Chunker de textos largos según la configuración.
 
         - ``max_text_characters`` (runtime): límite del texto de entrada.
-        - ``chunking`` (runtime): modo de división (sentence | paragraph).
+        - ``chunking`` (runtime): modo de división
+          (sentence | paragraph | none).
         - ``max_text_chars`` (runtime): tamaño máximo de cada fragmento
           generado (editable desde el panel).
         """
@@ -506,8 +507,9 @@ class TTSService:
 
     async def stream_synthesize(self, request: TTSRequest, plan: StreamPlan,
                                 http_request=None):
-        """Generador de chunked streaming: audio por fragmentos (frases o
-        párrafos, según text.chunking) en cuanto terminan.
+        """Generador de chunked streaming: audio por fragmentos (frases,
+        párrafos o un único fragmento, según text.chunking) en cuanto
+        terminan.
 
         IMPORTANTE: cada fragmento es una generación independiente.
         - Each chunk is synthesized independently.

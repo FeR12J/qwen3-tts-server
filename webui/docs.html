@@ -252,6 +252,7 @@ curl -N -X POST http://localhost:8001/tts/stream \
 <ul>
   <li><code>sentence</code> (por defecto): fragmentos de frases completas; los párrafos nunca se mezclan dentro de un fragmento. Recomendado para <code>/tts/stream</code>.</li>
   <li><code>paragraph</code>: fragmentos de párrafos completos; solo se subdividen los párrafos que exceden el máximo.</li>
+  <li><code>none</code>: sin división; el texto completo se sintetiza como un único fragmento (para textos ya cortos, p.ej. modo voz).</li>
 </ul>
 <p>En <code>POST /tts</code> (y play/audio/speech) los fragmentos se generan secuencialmente y el audio se devuelve concatenado en un solo WAV. En <code>POST /tts/stream</code> cada fragmento se emite en cuanto termina.</p>
 

@@ -165,6 +165,27 @@ def test_validate_config_update_new_fields():
     )
 
 
+def test_validate_config_update_chunking_none():
+    """El modo 'none' (sin división) es válido en la configuración runtime."""
+    from fastapi import HTTPException
+    from security.validation import validate_config_update
+
+    class FakeConfigService:
+        VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+        VALID_DTYPES = ("auto", "bfloat16", "float16", "float32")
+
+        def validate_dtype(self, dtype):
+            return dtype in self.VALID_DTYPES
+
+        def validate_device(self, device):
+            return device in ("auto", "cpu")
+
+    cs = FakeConfigService()
+    validate_config_update({"chunking": "none"}, cs)
+    with pytest.raises(HTTPException):
+        validate_config_update({"chunking": "frases"}, cs)
+
+
 def test_validate_config_update_whisper_model():
     """whisper_model se valida contra la whitelist del downloader (fuente
     única): los modelos conocidos pasan, los desconocidos se rechazan."""

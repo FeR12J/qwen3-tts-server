@@ -259,3 +259,73 @@ def test_load_runtime_config_env_beats_file_whisper_model(monkeypatch):
     cs.load_runtime_config()
     assert settings.runtime.whisper_model == "whisper-small"
     settings.runtime = original_runtime
+
+
+# -- Persistencia completa (ciclo panel -> disco -> arranque) ----------------
+
+
+def test_update_then_reload_persists_all_fields(tmp_path, monkeypatch):
+    """Ciclo completo: lo que el panel guarda (update_runtime_config ->
+    runtime.json) sobrevive a un reinicio (load_runtime_config en un proceso
+    nuevo). Sin esto, TODOS los ajustes perderían la persistencia."""
+    from storage import config_storage
+
+    runtime_file = tmp_path / "runtime.json"
+    monkeypatch.setattr(config_storage, "RUNTIME_FILE", str(runtime_file))
+    monkeypatch.setattr(cs, "load_runtime_file",
+                        config_storage.load_runtime_file)
+
+    original_runtime = settings.runtime
+    try:
+        # 1. El panel guarda una batería de ajustes
+        cs.update_runtime_config({
+            "chunking": "none",
+            "unload_tts_for_whisper": False,
+            "unload_whisper_for_tts": False,
+            "normalize_reference_audio": False,
+            "normalization_dbfs": -3.5,
+            "max_parallel_inference": 3,
+            "def_voice": "alberto",
+        })
+        assert runtime_file.exists()
+
+        # 2. "Reinicio": el runtime vuelve a defaults y se recarga de disco
+        settings.runtime = cs.RuntimeSettings()
+        cs.load_runtime_config()
+
+        # 3. Todo lo guardado sobrevive
+        assert settings.runtime.chunking == "none"
+        assert settings.runtime.unload_tts_for_whisper is False
+        assert settings.runtime.unload_whisper_for_tts is False
+        assert settings.runtime.normalize_reference_audio is False
+        assert settings.runtime.normalization_dbfs == -3.5
+        assert settings.runtime.max_parallel_inference == 3
+        assert settings.runtime.def_voice == "alberto"
+    finally:
+        settings.runtime = original_runtime
+
+
+def test_update_save_failure_raises_and_reverts(tmp_path, monkeypatch):
+    """Si la escritura de runtime.json falla, el guardado es un error 500
+    (no un "guardado" silencioso) y el cambio NO se aplica en memoria."""
+    from services.errors import APIError
+
+    # runtime.json "existente" que no se puede reemplazar (directorio es un archivo)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("no soy un directorio")
+    from storage import config_storage
+    monkeypatch.setattr(
+        config_storage, "RUNTIME_FILE", str(blocker / "runtime.json")
+    )
+    monkeypatch.setattr(cs, "save_runtime_config", config_storage.save_runtime_file)
+
+    original_runtime = settings.runtime
+    try:
+        with pytest.raises(APIError) as exc:
+            cs.update_runtime_config({"chunking": "paragraph"})
+        assert exc.value.status_code == 500
+        assert exc.value.code == "CONFIG_SAVE_FAILED"
+        # El valor en memoria no cambió (se revierte al fallar la escritura)
+        assert settings.runtime.chunking == original_runtime.chunking
+    finally:
+        settings.runtime = original_runtime

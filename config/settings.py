@@ -59,7 +59,10 @@ class PathsSettings(BaseModel):
 
 
 class TtsSettings(BaseModel):
-    """Modelo TTS que se carga al arrancar (si no existe, el primero)."""
+    """Modelo y voz preferidos (ya no se cargan automáticamente al arrancar:
+
+    el servidor inicia sin modelo cargado y se carga desde el panel o
+    POST /model/load)."""
     default_model: str = "Qwen3-TTS-12Hz-1.7B-VoiceDesign"
     default_voice: str = "annab"
 
@@ -77,10 +80,12 @@ class TextSettings(BaseModel):
         * ``sentence``: fragmentos de frases completas (párrafos no mezclados).
         * ``paragraph``: fragmentos de párrafos completos (solo se subdividen
           los párrafos que exceden el tamaño de fragmento).
+        * ``none``: sin división; el texto completo se sintetiza como un único
+          fragmento (para textos ya cortos, p.ej. modo voz).
 
     El límite de caracteres por petición vive en limits.max_text_characters.
     """
-    chunking: Literal["sentence", "paragraph"] = "sentence"
+    chunking: Literal["sentence", "paragraph", "none"] = "sentence"
 
 
 class CorsSettings(BaseModel):
@@ -258,7 +263,7 @@ class RuntimeSettings(BaseModel):
 
     # --- Ajustes heredados de los grupos estáticos (editables en el panel) ---
 
-    # text.chunking: modo de división de textos largos (sentence | paragraph)
+    # text.chunking: modo de división de textos largos (sentence | paragraph | none)
     chunking: str = "sentence"
     # audio.normalize_reference_audio / normalization_dbfs: normalización del
     # audio de referencia (clonación de voz)

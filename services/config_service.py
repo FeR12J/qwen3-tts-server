@@ -125,7 +125,12 @@ def load_runtime_config():
 
 
 def save_runtime_config():
-    """Persistir la configuración en disco."""
+    """Persistir la configuración en disco.
+
+    Los errores de escritura se propagan (config_storage no los silencia):
+    el llamador los convierte en un error HTTP para que el panel no diga
+    "guardado" si la configuración no se persistió de verdad.
+    """
     save_runtime_file(settings.runtime.model_dump())
 
 
@@ -166,15 +171,31 @@ def get_limits():
 
 
 def update_runtime_config(changes: dict) -> dict:
-    """Actualizar claves válidas de la configuración en tiempo de ejecución."""
+    """Actualizar claves válidas de la configuración en tiempo de ejecución.
+
+    La configuración se persiste SIEMPRE (data/runtime.json). Si la
+    escritura falla, la actualización se rechaza con un 500 en lugar de
+    devolver "guardado": los ajustes del panel deben sobrevivir reinicios.
+    """
     valid = {
         key: value
         for key, value in changes.items()
         if key in RUNTIME_FIELDS and value is not None
     }
+    previous = settings.runtime
     if valid:
         settings.runtime = settings.runtime.model_copy(update=valid)
-    save_runtime_config()
+    try:
+        save_runtime_config()
+    except Exception as e:
+        logger.error(f"No se pudo persistir la configuración en disco: {e}")
+        settings.runtime = previous
+        from services.errors import APIError
+        raise APIError(
+            "CONFIG_SAVE_FAILED",
+            f"No se pudo guardar la configuración en data/runtime.json: {e}",
+            status_code=500,
+        ) from e
     return get_runtime_config()
 
 

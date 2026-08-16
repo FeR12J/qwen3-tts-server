@@ -505,8 +505,17 @@ class ModelManager:
     async def _infer(self, method_name: str, kwargs: dict) -> tuple:
         """Ejecutar inferencia sobre el modelo activo (READY -> GENERATING -> READY/ERROR)."""
         entry = self._registry.get(self._active_id)
-        if entry is None or entry["state"] != ModelState.READY.value:
-            raise ValueError("No hay modelo cargado listo para inferencia")
+        if entry is None or entry["state"] not in (
+            ModelState.READY.value, ModelState.GENERATING.value,
+        ):
+            # Solo bloquean UNLOADED/LOADING/UNLOADING/ERROR. GENERATING es
+            # válido: con max_parallel_inference > 1 la cola admite varias
+            # inferencias simultáneas sobre la misma entrada (la primera pone
+            # el estado en GENERATING y las demás deben poder entrar).
+            from services.errors import ModelNotLoadedError
+            raise ModelNotLoadedError(
+                "No hay modelo cargado listo para inferencia"
+            )
         model = entry["model"]
         entry["state"] = ModelState.GENERATING.value
         try:

@@ -15,6 +15,11 @@ Modos configurables:
   recomendado para chunked streaming: el audio llega frase a frase.
 - ``paragraph``: cada fragmento es uno o más párrafos completos; solo los
   párrafos que exceden el tamaño máximo se subdividen por frases/palabras.
+- ``none``: sin división. El texto completo se sintetiza como un único
+  fragmento (no se parte ni por frases ni por párrafos), aunque supere
+  ``chunk_size``. Pensado para textos ya cortos (p.ej. modo voz) donde
+  dividir degrada la continuidad; el único límite aplicable es
+  ``max_characters`` (el de la petición).
 
 ``max_characters`` es la longitud máxima del texto de entrada: si se excede,
 chunk() lanza TextChunkerError. ``chunk_size`` es la longitud máxima de cada
@@ -48,7 +53,7 @@ from typing import Literal
 
 from utils.text import split_sentences
 
-ChunkingMode = Literal["sentence", "paragraph"]
+ChunkingMode = Literal["sentence", "paragraph", "none"]
 
 PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
 
@@ -66,9 +71,9 @@ class TextChunker:
         chunking: ChunkingMode = "sentence",
         chunk_size: int = 1000,
     ):
-        if chunking not in ("sentence", "paragraph"):
+        if chunking not in ("sentence", "paragraph", "none"):
             raise TextChunkerError(
-                f"chunking inválido: '{chunking}'. Válidos: sentence, paragraph"
+                f"chunking inválido: '{chunking}'. Válidos: sentence, paragraph, none"
             )
         if max_characters <= 0 or chunk_size <= 0:
             raise TextChunkerError("max_characters y chunk_size deben ser > 0")
@@ -91,6 +96,9 @@ class TextChunker:
                 f"Texto demasiado largo: {len(text)} caracteres "
                 f"(máximo {self.max_characters})"
             )
+
+        if self.chunking == "none":
+            return [text]
 
         paragraphs = self._split_paragraphs(text)
 

@@ -111,8 +111,8 @@ def validate_config_update(changes: dict, config_service):
             400,
             f"dtype inválido. Válidos: {', '.join(config_service.VALID_DTYPES)}",
         )
-    if "chunking" in changes and changes["chunking"] not in ("sentence", "paragraph"):
-        raise HTTPException(400, "chunking inválido. Válidos: sentence, paragraph")
+    if "chunking" in changes and changes["chunking"] not in ("sentence", "paragraph", "none"):
+        raise HTTPException(400, "chunking inválido. Válidos: sentence, paragraph, none")
     if "whisper_timestamps" in changes and changes["whisper_timestamps"] not in (
         "off", "segment", "word"
     ):

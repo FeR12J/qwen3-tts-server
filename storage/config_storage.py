@@ -31,14 +31,16 @@ def save_runtime_file(runtime: dict):
     Escribe a un archivo temporal y lo mueve con ``os.replace``: un crash a
     mitad de escritura no puede corromper runtime.json (y un archivo
     corrupto haría perder la configuración persistida).
+
+    Los errores de escritura NO se silencian: la persistencia de la
+    configuración es una garantía del servidor (el panel muestra
+    "guardado" solo si realmente se escribió), así que se registra el
+    error y se re-lanza para que el llamador lo convierta en un error HTTP.
     """
-    try:
-        os.makedirs(settings.paths.data_dir, exist_ok=True)
-        tmp_path = RUNTIME_FILE + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(runtime, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, RUNTIME_FILE)
-    except Exception as e:
-        logger.warning(f"No se pudo guardar la configuración de {RUNTIME_FILE}: {e}")
+    os.makedirs(settings.paths.data_dir, exist_ok=True)
+    tmp_path = RUNTIME_FILE + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(runtime, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, RUNTIME_FILE)

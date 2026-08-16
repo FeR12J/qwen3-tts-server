@@ -19,7 +19,6 @@ from starlette.datastructures import MutableHeaders
 
 from config.settings import settings
 from utils.logging import setup_logging
-from utils.gpu import get_vram_available
 from services.config_service import (
     load_runtime_config, apply_log_level, get_runtime_config,
 )
@@ -291,30 +290,9 @@ async def startup_procedure(ctx: AppContext):
 
     logger.info(f"Modelos locales disponibles ({len(local_models)}): {local_models}")
 
-    # Seleccionar modelo por defecto (configurable, fallback al primero disponible)
-    if len(local_models) > 0:
-        selected_model = None
-        if settings.tts.default_model and settings.tts.default_model in local_models:
-            selected_model = settings.tts.default_model
-        else:
-            selected_model = local_models[0]
-            if settings.tts.default_model:
-                logger.warning(
-                    f"Modelo por defecto '{settings.tts.default_model}' no encontrado, "
-                    f"usando '{selected_model}'"
-                )
-
-        logger.info(f"Modelo seleccionado por defecto: {selected_model}")
-
-        try:
-            async with ctx.queue.model_lock():
-                info = await ctx.models.load_model(selected_model)
-            logger.info(f"Modelo cargado: {info.model_id} ({info.model_type})")
-            logger.info(f"VRAM disponible: {get_vram_available()} GB")
-        except Exception as e:
-            logger.warning(f"Error cargando modelo por defecto: {e}")
-    else:
-        logger.warning("No hay modelos disponibles. El servidor funcionará sin modelo inicial.")
+    # El servidor arranca sin modelo cargado: el usuario elige cuándo cargar
+    # (panel o POST /model/load), evitando reservar VRAM al iniciarse.
+    logger.info("Servidor iniciado sin modelo cargado (usa /model/load o el panel)")
 
     # Voces locales
     local_voices = ctx.voices.list()
@@ -323,26 +301,6 @@ async def startup_procedure(ctx: AppContext):
     for v in local_voices:
         status = "OK" if v["valid"] else ("KO" if not v["has_reference_audio"] else "!?")
         logger.info(f"  {v['name']} (id: {v['id']}) {status}")
-
-    # Intentar clonar voz por defecto si hay modelos y voces disponibles
-    if len(local_models) > 0 and len(local_voices) >= 1 and ctx.models.is_loaded():
-
-        selected_voice = None
-        if settings.tts.default_voice and any(
-            v["name"] == settings.tts.default_voice for v in local_voices
-        ):
-            selected_voice = settings.tts.default_voice
-        else:
-            selected_voice = local_voices[0]["name"]
-
-        logger.info(f"Intentando clonar voz por defecto: {selected_voice}")
-
-        try:
-            async with ctx.queue.inference_lock():
-                await ctx.voices.load_voice(selected_voice)
-            logger.info(f"Voz '{selected_voice}' clonada correctamente y aplicada por defecto")
-        except Exception as e:
-            logger.warning(f"Error creando voz clonada (continuar sin voice cloning): {e}")
 
     logger.info("Escuchando...")
     logger.info(f"WebUI disponible en: http://localhost:{settings.runtime.port}/webui")

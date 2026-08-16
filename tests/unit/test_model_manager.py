@@ -334,6 +334,42 @@ def test_concurrent_loads_same_model_share_error(models_dir, monkeypatch):
     assert "OOM" in status["error"]
 
 
+def test_concurrent_inference_same_model_all_succeed(models_dir, monkeypatch):
+    """max_parallel_inference > 1: varias inferencias simultáneas sobre el
+    mismo modelo NO deben fallar porque la primera ponga el estado en
+    GENERATING (regresión: 'No hay modelo cargado listo para inferencia')."""
+    monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
+    mgr = ModelManager()
+    asyncio.run(mgr.load_model("model-a"))
+
+    async def scenario():
+        results = await asyncio.gather(
+            mgr.generate_voice_clone(prompt="uno"),
+            mgr.generate_voice_clone(prompt="dos"),
+            mgr.generate_voice_clone(prompt="tres"),
+        )
+        assert len(results) == 3
+
+    asyncio.run(scenario())
+
+    assert _status(mgr)["state"] == ModelState.READY.value
+
+
+def test_infer_rejects_when_not_ready(models_dir, monkeypatch):
+    """Sin modelo READY/GENERATING, la inferencia falla con 409 (no 500)."""
+    from services.errors import ModelNotLoadedError
+
+    monkeypatch.setattr(mm, "Qwen3TTSModel", FakeQwen3TTS)
+    mgr = ModelManager()
+
+    async def scenario():
+        with pytest.raises(ModelNotLoadedError) as exc:
+            await mgr.generate_voice_clone(prompt="x")
+        assert exc.value.status_code == 409
+
+    asyncio.run(scenario())
+
+
 def test_retry_after_failed_load_allowed(models_dir, monkeypatch):
     """Tras un ERROR, una nueva carga del mismo modelo se reintenta."""
     failures = [True]

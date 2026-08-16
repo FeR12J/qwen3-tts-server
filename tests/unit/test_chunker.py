@@ -84,6 +84,34 @@ def test_invalid_mode():
         TextChunker(chunking="tokens")
 
 
+# -- Modo "none": sin división ---------------------------------------------
+
+
+def test_none_mode_single_chunk_ignores_chunk_size():
+    """Modo none: el texto completo es un único fragmento, aunque supere
+    chunk_size (ni frases ni párrafos se dividen)."""
+    text = ("Primera frase. Segunda frase." + "\n\n" + "Párrafo dos.")
+    c = TextChunker(max_characters=10000, chunking="none", chunk_size=20)
+    assert c.chunk(text) == [text]
+
+
+def test_none_mode_preserves_paragraphs_and_formatting():
+    text = "Línea uno.\n\nLínea dos.\nLínea tres."
+    c = TextChunker(chunking="none", chunk_size=10)
+    assert c.chunk(text) == [text]
+
+
+def test_none_mode_still_enforces_max_characters():
+    c = TextChunker(max_characters=50, chunking="none")
+    with pytest.raises(TextChunkerError):
+        c.chunk("x" * 51)
+    assert c.chunk("y" * 50) == ["y" * 50]
+
+
+def test_none_mode_empty_text():
+    assert TextChunker(chunking="none").chunk("   ") == []
+
+
 def test_invalid_sizes():
     with pytest.raises(TextChunkerError):
         TextChunker(max_characters=0)
