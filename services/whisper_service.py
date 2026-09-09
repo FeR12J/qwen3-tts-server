@@ -41,6 +41,11 @@ _TIME_PRECISION = 0.02
 
 _WORD_RE = re.compile(r"\S+")
 
+# Whisper: el encoder produce 100 features por segundo; con más de 3000
+# features (~30 s) transformers activa el algoritmo secuencial long-form,
+# que exige return_timestamps=True (con False lanza ValueError).
+_LONG_FORM_FRAMES = 3000
+
 
 def _resolve_timestamp_mode(override: Optional[str]) -> str:
     """Resolver el modo de marcas de tiempo de una transcripción.
@@ -148,6 +153,54 @@ def _extract_words(segments: list) -> list:
     return words
 
 
+def _sequences_from_generate(outputs) -> object:
+    """Secuencia(s) de ids generadas: tensor plano o ``dict["sequences"]``.
+
+    ``generate(return_segments=True)`` devuelve un dict con "sequences" y
+    "segments"; sin ``return_segments`` devuelve directamente el tensor.
+    """
+    if isinstance(outputs, dict) and "sequences" in outputs:
+        return outputs["sequences"]
+    return outputs
+
+
+def _segments_from_generate(outputs, tokenizer):
+    """Segmentos calculados por el modelo (long-form, ``return_segments``).
+
+    transformers 4.57.3 devuelve la segmentación exacta del algoritmo
+    secuencial de Whisper (más fiable que reconstruirla del flujo de tokens):
+    ``segments`` es una lista por elemento del batch; cada segmento incluye
+    ``start``/``end`` (segundos, posiblemente tensores) y ``tokens``.
+
+    Devuelve una lista [{start, end, text}] o None si el output no incluye
+    segmentos (el llamador entonces usa la extracción manual).
+    """
+    if not isinstance(outputs, dict) or not outputs.get("segments"):
+        return None
+    batch = outputs["segments"]
+    if not batch:
+        return []
+    out = []
+    for seg in batch[0]:
+        start = seg.get("start", 0.0)
+        end = seg.get("end", 0.0)
+        tokens = seg.get("tokens")
+        if hasattr(start, "__float__"):
+            start = float(start)
+        if hasattr(end, "__float__"):
+            end = float(end)
+        token_ids = tokens.tolist() if hasattr(tokens, "tolist") else tokens
+        text = tokenizer.decode(token_ids, skip_special_tokens=True).strip()
+        if not text:
+            continue
+        out.append({
+            "start": round(start, 2),
+            "end": round(end, 2),
+            "text": text,
+        })
+    return out
+
+
 class WhisperService:
     """Transcripción de audio con Whisper (transformers).
 
@@ -251,7 +304,14 @@ class WhisperService:
 
     def _transcribe_sync(self, audio, language, task,
                          timestamps: Optional[str] = None) -> dict:
-        """Implementación bloqueante (se ejecuta en un hilo)."""
+        """Implementación bloqueante (se ejecuta en un hilo).
+
+        Time sin truncar (long-form): para audio > 30 s se pasan todas las
+        features a generate() para que transformers ejecute el algoritmo
+        secuencial de Whisper (ventanas de 30 s encadenadas). Ese algoritmo
+        exige ``return_timestamps=True``, así que en modo "off" los timestamps
+        se generan internamente y se eliminan al decodificar el texto final.
+        """
         wav, sr = self._audio.load(audio, target_sr=SPEECH_SAMPLE_RATE)
         duration = float(wav.shape[0]) / sr
         self._ensure_loaded()
@@ -264,8 +324,28 @@ class WhisperService:
         if mode != "off":
             log.info(f"whisper: marcas de tiempo habilitadas (modo: {mode})")
 
-        inputs = self._processor(wav, sampling_rate=16000, return_tensors="pt")
+        # NUNCA truncar: un audio largo debe llegar entero a generate() y
+        # transformers decide short/long-form por el número de features. El
+        # attention_mask se pasa para que el encoder ignore el padding.
+        inputs = self._processor(
+            wav,
+            sampling_rate=16000,
+            return_tensors="pt",
+            truncation=False,
+            padding="longest",
+            return_attention_mask=True,
+        )
         input_features = inputs.input_features.to(device=device, dtype=dtype)
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device=device)
+
+        is_long = input_features.shape[-1] > _LONG_FORM_FRAMES
+        if is_long:
+            log.info(
+                f"whisper: transcripción long-form "
+                f"({duration:.1f}s > 30 s, {input_features.shape[-1]} features)"
+            )
 
         forced_language = language if language != "auto" else None
         forced_decoder_ids = None
@@ -278,23 +358,37 @@ class WhisperService:
                 raise ValueError(str(e))
 
         generate_kwargs = {}
-        if mode != "off":
-            generate_kwargs["return_timestamps"] = True
+        if attention_mask is not None:
+            generate_kwargs["attention_mask"] = attention_mask
+        # Long-form exige return_timestamps=True (transformers lanza
+        # ValueError con False). También se usa el algoritmo secuencial para
+        # pedir segmentos/palabras. En modo "off" los timestamps son un medio
+        # (necesario para audios largos): se eliminan en el texto final.
+        generate_kwargs["return_timestamps"] = (is_long or mode != "off")
+        if mode in ("segment", "word"):
+            # Segmentos calculados por el propio modelo (land-mark de
+            # precisión): preferibles a reconstruirlos del flujo de tokens.
+            generate_kwargs["return_segments"] = True
 
         with torch.inference_mode():
             try:
                 if forced_decoder_ids is not None:
-                    generated = self._model.generate(
+                    outputs = self._model.generate(
                         input_features,
                         forced_decoder_ids=forced_decoder_ids,
                         **generate_kwargs,
                     )
                     detected_language = forced_language
                 else:
-                    generated = self._model.generate(
+                    outputs = self._model.generate(
                         input_features, **generate_kwargs
                     )
-                    full = self._processor.tokenizer.decode(generated[0].tolist())
+                    sequences = _sequences_from_generate(outputs)
+                    full = self._processor.tokenizer.decode(
+                        sequences[0].tolist()
+                        if hasattr(sequences[0], "tolist")
+                        else sequences[0]
+                    )
                     match = re.search(r"<\|([a-z]{2,3})\|>", full)
                     detected_language = match.group(1) if match else "auto"
             except torch.cuda.OutOfMemoryError as e:
@@ -307,7 +401,13 @@ class WhisperService:
                     torch.cuda.empty_cache()
                 raise GPUOutOfMemoryError() from e
 
-        text = self._processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
+        # El texto final nunca contiene marcas de tiempo: skip_special_tokens
+        # elimina los tokens de tiempo, incluidos los usados internamente en
+        # long-form con modo "off".
+        sequences = _sequences_from_generate(outputs)
+        text = self._processor.batch_decode(
+            sequences, skip_special_tokens=True
+        )[0].strip()
         result = {
             "text": text,
             "language": detected_language,
@@ -317,9 +417,13 @@ class WhisperService:
             "timestamps": mode,
         }
         if mode in ("segment", "word"):
-            segments = _extract_segments(
-                self._processor.tokenizer, generated[0], duration
+            segments = _segments_from_generate(
+                outputs, self._processor.tokenizer
             )
+            if segments is None:
+                segments = _extract_segments(
+                    self._processor.tokenizer, sequences[0], duration
+                )
             result["segments"] = segments
         if mode == "word":
             result["words"] = _extract_words(result["segments"])

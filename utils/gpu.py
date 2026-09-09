@@ -20,7 +20,7 @@ def get_vram_available():
         try:
             idx = int(device.split(":", 1)[1])
             if torch.cuda.is_available() and idx < torch.cuda.device_count():
-                return round(torch.cuda.get_device_properties(idx).total_memory / 1e9, 1)
+                return round(torch.cuda.get_device_properties(idx).total_memory / (1024 ** 3), 1)
         except (ValueError, IndexError, RuntimeError):
             pass
     return 0.0
@@ -37,7 +37,7 @@ def list_devices() -> dict:
                 devices.append({
                     "index": i,
                     "name": props.name,
-                    "vram_gb": round(props.total_memory / 1e9, 1)
+                    "vram_gb": round(props.total_memory / (1024 ** 3), 1)
                 })
             except Exception:
                 devices.append({"index": i, "name": "GPU desconocida", "vram_gb": None})

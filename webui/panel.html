@@ -1104,7 +1104,7 @@ async function createVoice() {
 function mb(n) { return n >= 1024 ? (n / 1024).toFixed(2) + ' GB' : Math.round(n) + ' MB'; }
 function fmtFiles(c) {
   if (!c || !c.exists) return '—';
-  return c.files + ' archivo' + (c.files === 1 ? '' : 's') + ' · ' + mb(c.size_mb * 1024);
+  return c.files + ' archivo' + (c.files === 1 ? '' : 's') + ' · ' + mb(c.size_mb);
 }
 
 async function loadDashboard() {
