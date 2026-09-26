@@ -88,7 +88,12 @@ class DynamicCORSMiddleware(CORSMiddleware):
         wildcard, origins = _cors_state.get() or (False, ())
         message.setdefault("headers", [])
         headers = MutableHeaders(scope=message)
-        origin = request_headers["Origin"]
+        origin = request_headers.get("Origin")
+        if origin is None:
+            # Peticiones sin cabecera Origin (navegaciones normales del
+            # navegador, curl, etc.): no aplica CORS, se responde tal cual.
+            await send(message)
+            return
         if wildcard:
             if self.allow_credentials:
                 headers["Access-Control-Allow-Origin"] = origin
